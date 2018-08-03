@@ -66,6 +66,7 @@ type baseExecutor struct {
 	ctx           sessionctx.Context
 	id            string
 	schema        *expression.Schema
+	chunkCap      int
 	maxChunkSize  int
 	children      []Executor
 	retFieldTypes []*types.FieldType
@@ -103,7 +104,16 @@ func (e *baseExecutor) Schema() *expression.Schema {
 
 // newChunk creates a new chunk to buffer current executor's result.
 func (e *baseExecutor) newChunk() *chunk.Chunk {
-	return chunk.NewChunkWithCapacity(e.retTypes(), e.maxChunkSize)
+	return chunk.NewChunkWithCapacity(e.retTypes(), e.chunkCap)
+}
+
+// newChunk creates a new chunk to buffer current executor's result.
+func (e *baseExecutor) newChunkInLoop() *chunk.Chunk {
+	newChk := chunk.NewChunkWithCapacity(e.retTypes(), e.chunkCap)
+	if e.chunkCap < e.maxChunkSize {
+		e.chunkCap <<= 1
+	}
+	return newChk
 }
 
 // retTypes returns all output column types.
@@ -122,6 +132,7 @@ func newBaseExecutor(ctx sessionctx.Context, schema *expression.Schema, id strin
 		ctx:          ctx,
 		id:           id,
 		schema:       schema,
+		chunkCap:     ctx.GetSessionVars().ChunkCap,
 		maxChunkSize: ctx.GetSessionVars().MaxChunkSize,
 	}
 	if schema != nil {
@@ -152,6 +163,7 @@ type Executor interface {
 
 	retTypes() []*types.FieldType
 	newChunk() *chunk.Chunk
+	newChunkInLoop() *chunk.Chunk
 }
 
 // CancelDDLJobsExec represents a cancel DDL jobs executor.
@@ -810,7 +822,7 @@ func (e *TableScanExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 func (e *TableScanExec) nextChunk4InfoSchema(ctx context.Context, chk *chunk.Chunk) error {
 	chk.Reset()
 	if e.virtualTableChunkList == nil {
-		e.virtualTableChunkList = chunk.NewList(e.retTypes(), e.maxChunkSize)
+		e.virtualTableChunkList = chunk.NewList(e.retTypes(), e.chunkCap, e.maxChunkSize)
 		columns := make([]*table.Column, e.schema.Len())
 		for i, colInfo := range e.columns {
 			columns[i] = table.ToColumn(colInfo)

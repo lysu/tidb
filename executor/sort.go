@@ -107,11 +107,11 @@ func (e *SortExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 
 func (e *SortExec) fetchRowChunks(ctx context.Context) error {
 	fields := e.retTypes()
-	e.rowChunks = chunk.NewList(fields, e.maxChunkSize)
+	e.rowChunks = chunk.NewList(fields, e.chunkCap, e.maxChunkSize)
 	e.rowChunks.GetMemTracker().AttachTo(e.memTracker)
 	e.rowChunks.GetMemTracker().SetLabel("rowChunks")
 	for {
-		chk := e.children[0].newChunk()
+		chk := e.children[0].newChunkInLoop()
 		err := e.children[0].Next(ctx, chk)
 		if err != nil {
 			return errors.Trace(err)
@@ -171,7 +171,7 @@ func (e *SortExec) buildKeyExprsAndTypes() {
 }
 
 func (e *SortExec) buildKeyChunks() error {
-	e.keyChunks = chunk.NewList(e.keyTypes, e.maxChunkSize)
+	e.keyChunks = chunk.NewList(e.keyTypes, e.chunkCap, e.maxChunkSize)
 	e.keyChunks.GetMemTracker().SetLabel("keyChunks")
 	e.keyChunks.GetMemTracker().AttachTo(e.memTracker)
 
@@ -323,11 +323,11 @@ func (e *TopNExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 
 func (e *TopNExec) loadChunksUntilTotalLimit(ctx context.Context) error {
 	e.chkHeap = &topNChunkHeap{e}
-	e.rowChunks = chunk.NewList(e.retTypes(), e.maxChunkSize)
+	e.rowChunks = chunk.NewList(e.retTypes(), e.chunkCap, e.maxChunkSize)
 	e.rowChunks.GetMemTracker().AttachTo(e.memTracker)
 	e.rowChunks.GetMemTracker().SetLabel("rowChunks")
 	for e.rowChunks.Len() < e.totalLimit {
-		srcChk := e.children[0].newChunk()
+		srcChk := e.children[0].newChunkInLoop()
 		err := e.children[0].Next(ctx, srcChk)
 		if err != nil {
 			return errors.Trace(err)
@@ -360,7 +360,10 @@ func (e *TopNExec) executeTopN(ctx context.Context) error {
 	}
 	var childKeyChk *chunk.Chunk
 	if e.keyChunks != nil {
-		childKeyChk = chunk.NewChunkWithCapacity(e.keyTypes, e.maxChunkSize)
+		childKeyChk = chunk.NewChunkWithCapacity(e.keyTypes, e.chunkCap)
+		if e.chunkCap < e.maxChunkSize {
+			e.chunkCap <<= 1
+		}
 	}
 	childRowChk := e.children[0].newChunk()
 	for {
@@ -425,7 +428,7 @@ func (e *TopNExec) processChildChk(childRowChk, childKeyChk *chunk.Chunk) error 
 // but we want descending top N, then we will keep all data in memory.
 // But if data is distributed randomly, this function will be called log(n) times.
 func (e *TopNExec) doCompaction() error {
-	newRowChunks := chunk.NewList(e.retTypes(), e.maxChunkSize)
+	newRowChunks := chunk.NewList(e.retTypes(), e.chunkCap, e.maxChunkSize)
 	newRowPtrs := make([]chunk.RowPtr, 0, e.rowChunks.Len())
 	for _, rowPtr := range e.rowPtrs {
 		newRowPtr := newRowChunks.AppendRow(e.rowChunks.GetRow(rowPtr))
@@ -436,7 +439,7 @@ func (e *TopNExec) doCompaction() error {
 	e.rowChunks = newRowChunks
 
 	if e.keyChunks != nil {
-		newKeyChunks := chunk.NewList(e.keyTypes, e.maxChunkSize)
+		newKeyChunks := chunk.NewList(e.keyTypes, e.chunkCap, e.maxChunkSize)
 		for _, rowPtr := range e.rowPtrs {
 			newKeyChunks.AppendRow(e.keyChunks.GetRow(rowPtr))
 		}

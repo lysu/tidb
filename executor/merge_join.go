@@ -179,7 +179,7 @@ func (t *mergeJoinInnerTable) reallocReaderResult() {
 	// Create a new Chunk and append it to "resourceQueue" if there is no more
 	// available chunk in "resourceQueue".
 	if len(t.resourceQueue) == 0 {
-		newChunk := t.reader.newChunk()
+		newChunk := t.reader.newChunkInLoop()
 		t.memTracker.Consume(newChunk.MemoryUsage())
 		t.resourceQueue = append(t.resourceQueue, newChunk)
 	}

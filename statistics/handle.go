@@ -68,6 +68,7 @@ func (h *Handle) Clear() {
 	}
 	h.feedback = h.feedback[:0]
 	h.mu.ctx.GetSessionVars().MaxChunkSize = 1
+	h.mu.ctx.GetSessionVars().ChunkCap = 1
 	h.listHead = &SessionStatsCollector{mapper: make(tableDeltaMap), rateMap: make(errorRateDeltaMap)}
 	h.globalMap = make(tableDeltaMap)
 	h.mu.rateMap = make(errorRateDeltaMap)

@@ -198,3 +198,7 @@ func (e *PointGetExecutor) retTypes() []*types.FieldType {
 func (e *PointGetExecutor) newChunk() *chunk.Chunk {
 	return chunk.NewChunkWithCapacity(e.retTypes(), 1)
 }
+
+func (e *PointGetExecutor) newChunkInLoop() *chunk.Chunk {
+	return e.newChunk()
+}

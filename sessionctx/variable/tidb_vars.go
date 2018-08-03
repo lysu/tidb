@@ -148,6 +148,9 @@ const (
 	// tidb_max_chunk_capacity is used to control the max chunk size during query execution.
 	TiDBMaxChunkSize = "tidb_max_chunk_size"
 
+	// tidb_chunk_cap is used to control the init chunk capacity during query execution.
+	TiDBChunkCap = "tidb_chunk_cap"
+
 	// tidb_skip_utf8_check skips the UTF8 validate process, validate UTF8 has performance cost, if we can make sure
 	// the input string values are valid, we can skip the check.
 	TiDBSkipUTF8Check = "tidb_skip_utf8_check"
@@ -193,6 +196,7 @@ const (
 	DefBatchDelete                   = false
 	DefCurretTS                      = 0
 	DefMaxChunkSize                  = 1024
+	DefChunkCap                      = 32
 	DefDMLBatchSize                  = 20000
 	DefTiDBMemQuotaHashJoin          = 32 << 30 // 32GB.
 	DefTiDBMemQuotaMergeJoin         = 32 << 30 // 32GB.

@@ -23,6 +23,7 @@ import (
 type List struct {
 	fieldTypes   []*types.FieldType
 	maxChunkSize int
+	chunkCap     int
 	length       int
 	chunks       []*Chunk
 	freelist     []*Chunk
@@ -39,9 +40,10 @@ type RowPtr struct {
 }
 
 // NewList creates a new List with field types and max chunk size.
-func NewList(fieldTypes []*types.FieldType, maxChunkSize int) *List {
+func NewList(fieldTypes []*types.FieldType, chunkCap, maxChunkSize int) *List {
 	l := &List{
 		fieldTypes:   fieldTypes,
+		chunkCap:     chunkCap,
 		maxChunkSize: maxChunkSize,
 		memTracker:   memory.NewTracker("chunk.List", -1),
 		consumedIdx:  -1,
@@ -115,7 +117,11 @@ func (l *List) allocChunk() (chk *Chunk) {
 		chk.Reset()
 		return
 	}
-	return NewChunkWithCapacity(l.fieldTypes, l.maxChunkSize)
+	newChk := NewChunkWithCapacity(l.fieldTypes, l.chunkCap)
+	if l.chunkCap < l.maxChunkSize {
+		l.chunkCap <<= 1
+	}
+	return newChk
 }
 
 // GetRow gets a Row from the list by RowPtr.

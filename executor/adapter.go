@@ -106,7 +106,7 @@ func (a *recordSet) Next(ctx context.Context, chk *chunk.Chunk) error {
 
 // NewChunk create a new chunk using NewChunk function in chunk package.
 func (a *recordSet) NewChunk() *chunk.Chunk {
-	return a.executor.newChunk()
+	return a.executor.newChunkInLoop()
 }
 
 func (a *recordSet) Close() error {

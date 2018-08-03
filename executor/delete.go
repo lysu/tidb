@@ -105,7 +105,7 @@ func (e *DeleteExec) deleteSingleTableByChunk(ctx context.Context) error {
 	batchDMLSize := e.ctx.GetSessionVars().DMLBatchSize
 	fields := e.children[0].retTypes()
 	for {
-		chk := e.children[0].newChunk()
+		chk := e.children[0].newChunkInLoop()
 		iter := chunk.NewIterator4Chunk(chk)
 
 		err := e.children[0].Next(ctx, chk)
@@ -185,7 +185,7 @@ func (e *DeleteExec) deleteMultiTablesByChunk(ctx context.Context) error {
 	tblRowMap := make(tableRowMapType)
 	fields := e.children[0].retTypes()
 	for {
-		chk := e.children[0].newChunk()
+		chk := e.children[0].newChunkInLoop()
 		iter := chunk.NewIterator4Chunk(chk)
 
 		err := e.children[0].Next(ctx, chk)
