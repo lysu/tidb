@@ -86,11 +86,13 @@ type PrepareExec struct {
 
 // NewPrepareExec creates a new PrepareExec.
 func NewPrepareExec(ctx sessionctx.Context, is infoschema.InfoSchema, sqlTxt string) *PrepareExec {
-	return &PrepareExec{
+	e := &PrepareExec{
 		baseExecutor: newBaseExecutor(ctx, nil, "PrepareStmt"),
 		is:           is,
 		sqlText:      sqlTxt,
 	}
+	e.chunkCap = -1
+	return e
 }
 
 // Next implements the Executor Next interface.
