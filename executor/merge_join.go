@@ -179,7 +179,7 @@ func (t *mergeJoinInnerTable) reallocReaderResult() {
 	// Create a new Chunk and append it to "resourceQueue" if there is no more
 	// available chunk in "resourceQueue".
 	if len(t.resourceQueue) == 0 {
-		newChunk := t.reader.newChunkInLoop()
+		newChunk := t.reader.newChunk()
 		t.memTracker.Consume(newChunk.MemoryUsage())
 		t.resourceQueue = append(t.resourceQueue, newChunk)
 	}
@@ -233,7 +233,7 @@ func compareChunkRow(cmpFuncs []chunk.CompareFunc, lhsRow, rhsRow chunk.Row, lhs
 	return 0
 }
 
-func (e *MergeJoinExec) prepare(ctx context.Context, chk *chunk.Chunk) error {
+func (e *MergeJoinExec) prepare(ctx context.Context) error {
 	err := e.innerTable.init(ctx, e.childrenResults[e.outerIdx^1])
 	if err != nil {
 		return errors.Trace(err)
@@ -263,7 +263,7 @@ func (e *MergeJoinExec) prepare(ctx context.Context, chk *chunk.Chunk) error {
 func (e *MergeJoinExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 	chk.Reset()
 	if !e.prepared {
-		if err := e.prepare(ctx, chk); err != nil {
+		if err := e.prepare(ctx); err != nil {
 			return errors.Trace(err)
 		}
 	}

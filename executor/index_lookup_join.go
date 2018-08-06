@@ -192,7 +192,6 @@ func (e *IndexLookUpJoin) newInnerWorker(taskCh chan *lookUpJoinTask) *innerWork
 // Next implements the Executor interface.
 func (e *IndexLookUpJoin) Next(ctx context.Context, chk *chunk.Chunk) error {
 	chk.Reset()
-	e.joinResult.Reset()
 	for {
 		task, err := e.getFinishedTask(ctx)
 		if err != nil {
@@ -286,8 +285,12 @@ func (ow *outerWorker) run(ctx context.Context, wg *sync.WaitGroup) {
 		close(ow.innerCh)
 		wg.Done()
 	}()
+	var (
+		task *lookUpJoinTask
+		err  error
+	)
 	for {
-		task, err := ow.buildTask(ctx)
+		task, err = ow.buildTask(ctx, task)
 		if err != nil {
 			task.doneCh <- errors.Trace(err)
 			ow.pushToChan(ctx, task, ow.resultCh)
@@ -318,10 +321,16 @@ func (ow *outerWorker) pushToChan(ctx context.Context, task *lookUpJoinTask, dst
 
 // buildTask builds a lookUpJoinTask and read outer rows.
 // When err is not nil, task must not be nil to send the error to the main thread via task.
-func (ow *outerWorker) buildTask(ctx context.Context) (*lookUpJoinTask, error) {
+func (ow *outerWorker) buildTask(ctx context.Context, preTask *lookUpJoinTask) (*lookUpJoinTask, error) {
+	var outerResult *chunk.Chunk
+	if preTask == nil {
+		outerResult = ow.executor.newChunk()
+	} else {
+		outerResult = ow.executor.newChunkWithCapacity(outerResult.NumRows())
+	}
 	task := &lookUpJoinTask{
 		doneCh:            make(chan error, 1),
-		outerResult:       ow.executor.newChunkInLoop(),
+		outerResult:       outerResult,
 		encodedLookUpKeys: chunk.NewChunkWithCapacity([]*types.FieldType{types.NewFieldType(mysql.TypeBlob)}, ow.chunkCap),
 		lookupMap:         mvmap.NewMVMap(),
 	}
@@ -526,7 +535,7 @@ func (iw *innerWorker) fetchInnerResults(ctx context.Context, task *lookUpJoinTa
 			break
 		}
 		innerResult.Add(iw.executorChk)
-		iw.executorChk = innerExec.newChunk()
+		iw.executorChk = innerExec.newChunkWithCapacity(iw.executorChk.NumRows())
 	}
 	task.innerResult = innerResult
 	return nil

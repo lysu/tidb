@@ -748,8 +748,8 @@ func (w *tableWorker) executeTask(ctx context.Context, task *lookupTableTask) er
 	task.memTracker.Consume(memUsage)
 	handleCnt := len(task.handles)
 	task.rows = make([]chunk.Row, 0, handleCnt)
+	chk := tableReader.newChunk()
 	for {
-		chk := tableReader.newChunkInLoop()
 		err = tableReader.Next(ctx, chk)
 		if err != nil {
 			log.Error(err)
@@ -765,6 +765,7 @@ func (w *tableWorker) executeTask(ctx context.Context, task *lookupTableTask) er
 		for row := iter.Begin(); row != iter.End(); row = iter.Next() {
 			task.rows = append(task.rows, row)
 		}
+		chk = tableReader.newChunkWithCapacity(chk.NumRows())
 	}
 	memUsage = int64(cap(task.rows)) * int64(unsafe.Sizeof(chunk.Row{}))
 	task.memUsage += memUsage

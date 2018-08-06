@@ -196,9 +196,9 @@ func (e *PointGetExecutor) retTypes() []*types.FieldType {
 }
 
 func (e *PointGetExecutor) newChunk() *chunk.Chunk {
-	return chunk.NewChunkWithCapacity(e.retTypes(), 1)
+	return e.newChunkWithCapacity(1)
 }
 
-func (e *PointGetExecutor) newChunkInLoop() *chunk.Chunk {
-	return e.newChunk()
+func (e *PointGetExecutor) newChunkWithCapacity(cap int) *chunk.Chunk {
+	return chunk.NewChunkWithCapacity(e.retTypes(), cap)
 }

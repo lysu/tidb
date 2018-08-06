@@ -104,16 +104,11 @@ func (e *baseExecutor) Schema() *expression.Schema {
 
 // newChunk creates a new chunk to buffer current executor's result.
 func (e *baseExecutor) newChunk() *chunk.Chunk {
-	return chunk.NewChunkWithCapacity(e.retTypes(), e.chunkCap)
+	return e.newChunkWithCapacity(e.chunkCap)
 }
 
-// newChunk creates a new chunk to buffer current executor's result.
-func (e *baseExecutor) newChunkInLoop() *chunk.Chunk {
-	newChk := chunk.NewChunkWithCapacity(e.retTypes(), e.chunkCap)
-	if e.chunkCap < e.maxChunkSize {
-		e.chunkCap <<= 1
-	}
-	return newChk
+func (e *baseExecutor) newChunkWithCapacity(cap int) *chunk.Chunk {
+	return chunk.NewChunkWithCapacity(e.retTypes(), cap)
 }
 
 // retTypes returns all output column types.
@@ -163,7 +158,7 @@ type Executor interface {
 
 	retTypes() []*types.FieldType
 	newChunk() *chunk.Chunk
-	newChunkInLoop() *chunk.Chunk
+	newChunkWithCapacity(cap int) *chunk.Chunk
 }
 
 // CancelDDLJobsExec represents a cancel DDL jobs executor.

@@ -110,8 +110,8 @@ func (e *SortExec) fetchRowChunks(ctx context.Context) error {
 	e.rowChunks = chunk.NewList(fields, e.chunkCap, e.maxChunkSize)
 	e.rowChunks.GetMemTracker().AttachTo(e.memTracker)
 	e.rowChunks.GetMemTracker().SetLabel("rowChunks")
+	chk := e.children[0].newChunk()
 	for {
-		chk := e.children[0].newChunkInLoop()
 		err := e.children[0].Next(ctx, chk)
 		if err != nil {
 			return errors.Trace(err)
@@ -121,6 +121,7 @@ func (e *SortExec) fetchRowChunks(ctx context.Context) error {
 			break
 		}
 		e.rowChunks.Add(chk)
+		chk = e.children[0].newChunkWithCapacity(chk.NumRows())
 	}
 	return nil
 }

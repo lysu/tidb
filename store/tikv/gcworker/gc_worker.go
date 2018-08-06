@@ -852,7 +852,7 @@ func (w *GCWorker) loadValueFromSysTable(key string) (string, error) {
 	if err != nil {
 		return "", errors.Trace(err)
 	}
-	chk := rs[0].NewChunk()
+	chk := rs[0].NewChunkWithCapacity(1)
 	err = rs[0].Next(ctx, chk)
 	if err != nil {
 		return "", errors.Trace(err)

@@ -263,13 +263,14 @@ func (e *HashJoinExec) fetchInnerRows(ctx context.Context) (err error) {
 	e.innerResult = chunk.NewList(e.innerExec.retTypes(), e.chunkCap, e.maxChunkSize)
 	e.innerResult.GetMemTracker().AttachTo(e.memTracker)
 	e.innerResult.GetMemTracker().SetLabel("innerResult")
+	chk := e.children[e.innerIdx].newChunk()
 	for {
-		chk := e.children[e.innerIdx].newChunkInLoop()
 		err = e.innerExec.Next(ctx, chk)
 		if err != nil || chk.NumRows() == 0 {
 			return errors.Trace(err)
 		}
 		e.innerResult.Add(chk)
+		chk = e.children[e.innerIdx].newChunkWithCapacity(chk.NumRows())
 	}
 }
 

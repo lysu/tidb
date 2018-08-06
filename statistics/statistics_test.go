@@ -172,8 +172,8 @@ func encodeKey(key types.Datum) types.Datum {
 func buildPK(sctx sessionctx.Context, numBuckets, id int64, records ast.RecordSet) (int64, *Histogram, error) {
 	b := NewSortedBuilder(sctx.GetSessionVars().StmtCtx, numBuckets, id, types.NewFieldType(mysql.TypeLonglong))
 	ctx := context.Background()
+	chk := records.NewChunk()
 	for {
-		chk := records.NewChunk()
 		err := records.Next(ctx, chk)
 		if err != nil {
 			return 0, nil, errors.Trace(err)
@@ -189,6 +189,7 @@ func buildPK(sctx sessionctx.Context, numBuckets, id int64, records ast.RecordSe
 				return 0, nil, errors.Trace(err)
 			}
 		}
+		chk = records.NewChunkWithCapacity(chk.NumRows())
 	}
 	return b.Count, b.hist, nil
 }

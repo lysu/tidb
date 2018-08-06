@@ -223,11 +223,15 @@ func (e *analyzeColumnsExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 }
 
 func (e *analyzeColumnsExec) NewChunk() *chunk.Chunk {
+	return e.NewChunkWithCapacity(1)
+}
+
+func (e *analyzeColumnsExec) NewChunkWithCapacity(cap int) *chunk.Chunk {
 	fields := make([]*types.FieldType, 0, len(e.fields))
 	for _, field := range e.fields {
 		fields = append(fields, &field.Column.FieldType)
 	}
-	return chunk.NewChunkWithCapacity(fields, 1)
+	return chunk.NewChunkWithCapacity(fields, cap)
 }
 
 // Close implements the ast.RecordSet Close interface.
