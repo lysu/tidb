@@ -1048,7 +1048,7 @@ func (cc *clientConn) writeChunksWithFetchSize(ctx context.Context, rs ResultSet
 		for i := 0; i < rowCount; i++ {
 			fetchedRows = append(fetchedRows, chk.GetRow(i))
 		}
-		chk = rs.NewChunkWithCapacity(fetchSize - len(fetchedRows))
+		chk = rs.NewChunkWithCapacity(cc.chunkCapacity(fetchSize - len(fetchedRows)))
 	}
 
 	// tell the client COM_STMT_FETCH has finished by setting proper serverStatus,
