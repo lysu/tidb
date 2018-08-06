@@ -119,7 +119,7 @@ func (l *List) allocChunk() (chk *Chunk) {
 	}
 	newChk := NewChunkWithCapacity(l.fieldTypes, l.chunkCap)
 	if l.chunkCap < l.maxChunkSize {
-		l.chunkCap <<= 1
+		l.chunkCap *= 2
 	}
 	return newChk
 }

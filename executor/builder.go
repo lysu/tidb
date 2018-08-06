@@ -390,7 +390,7 @@ func (b *executorBuilder) buildDeallocate(v *plan.Deallocate) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, nil, v.ExplainID()),
 		Name:         v.Name,
 	}
-	e.chunkCap = -1
+	e.chunkCap = chunk.VoidCapacity
 	return e
 }
 
@@ -440,7 +440,7 @@ func (b *executorBuilder) buildPrepare(v *plan.Prepare) Executor {
 		name:         v.Name,
 		sqlText:      v.SQLText,
 	}
-	e.chunkCap = -1
+	e.chunkCap = chunk.VoidCapacity
 	return e
 }
 
@@ -495,7 +495,7 @@ func (b *executorBuilder) buildSimple(v *plan.Simple) Executor {
 		Statement:    v.Statement,
 		is:           b.is,
 	}
-	e.chunkCap = -1
+	e.chunkCap = chunk.VoidCapacity
 	return e
 }
 
@@ -504,7 +504,7 @@ func (b *executorBuilder) buildSet(v *plan.Set) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
 		vars:         v.VarAssigns,
 	}
-	e.chunkCap = -1
+	e.chunkCap = chunk.VoidCapacity
 	return e
 }
 
@@ -520,7 +520,7 @@ func (b *executorBuilder) buildInsert(v *plan.Insert) Executor {
 	} else {
 		baseExec = newBaseExecutor(b.ctx, nil, v.ExplainID())
 	}
-	baseExec.chunkCap = -1
+	baseExec.chunkCap = chunk.VoidCapacity
 
 	ivs := &InsertValues{
 		baseExecutor:          baseExec,
@@ -1251,7 +1251,7 @@ func (b *executorBuilder) buildUpdate(v *plan.Update) Executor {
 		tblID2table:    tblID2table,
 		columns2Handle: columns2Handle,
 	}
-	updateExec.chunkCap = -1
+	updateExec.chunkCap = chunk.VoidCapacity
 	return updateExec
 }
 
@@ -1331,7 +1331,7 @@ func (b *executorBuilder) buildDelete(v *plan.Delete) Executor {
 		IsMultiTable: v.IsMultiTable,
 		tblID2Table:  tblID2table,
 	}
-	deleteExec.chunkCap = -1
+	deleteExec.chunkCap = chunk.VoidCapacity
 	return deleteExec
 }
 

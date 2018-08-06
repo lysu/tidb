@@ -35,12 +35,14 @@ type Chunk struct {
 // Capacity constants.
 const (
 	InitialCapacity = 32
+	VoidCapacity    = -1
 )
 
 // NewChunkWithCapacity creates a new chunk with field types and capacity.
 func NewChunkWithCapacity(fields []*types.FieldType, cap int) *Chunk {
 	chk := new(Chunk)
-	if cap < 0 {
+	// void capacity will return a void chunk without allocate columns.
+	if cap == VoidCapacity {
 		return chk
 	}
 	chk.columns = make([]*column, 0, len(fields))
