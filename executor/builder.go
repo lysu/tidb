@@ -1077,6 +1077,7 @@ func (b *executorBuilder) buildTableDual(v *plan.PhysicalTableDual) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
 		numDualRows:  v.RowCount,
 	}
+	v.RowCount = 1
 	// Init the startTS for later use.
 	b.getStartTS()
 	return e
