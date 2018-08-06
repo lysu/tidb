@@ -94,11 +94,15 @@ func (r *recordSet) Next(ctx context.Context, chk *chunk.Chunk) error {
 }
 
 func (r *recordSet) NewChunk() *chunk.Chunk {
+	return r.NewChunkWithCapacity(32)
+}
+
+func (r *recordSet) NewChunkWithCapacity(cap int) *chunk.Chunk {
 	fields := make([]*types.FieldType, 0, len(r.fields))
 	for _, field := range r.fields {
 		fields = append(fields, &field.Column.FieldType)
 	}
-	return chunk.NewChunkWithCapacity(fields, 32)
+	return chunk.NewChunkWithCapacity(fields, cap)
 }
 
 func (r *recordSet) Close() error {

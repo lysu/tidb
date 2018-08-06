@@ -326,7 +326,7 @@ func (ow *outerWorker) buildTask(ctx context.Context, preTask *lookUpJoinTask) (
 	if preTask == nil {
 		outerResult = ow.executor.newChunk()
 	} else {
-		outerResult = ow.executor.newChunkWithCapacity(outerResult.NumRows())
+		outerResult = ow.executor.newChunkWithCapacity(preTask.outerResult.NumRows())
 	}
 	task := &lookUpJoinTask{
 		doneCh:            make(chan error, 1),
