@@ -332,7 +332,7 @@ func (e *TopNExec) loadChunksUntilTotalLimit(ctx context.Context) error {
 	e.rowChunks.GetMemTracker().AttachTo(e.memTracker)
 	e.rowChunks.GetMemTracker().SetLabel("rowChunks")
 	for e.rowChunks.Len() < e.totalLimit {
-		srcChk := chunk.NewChunkWithCapacity(e.children[0].retTypes(), chunkCap)
+		srcChk := e.children[0].newChunkWithCapacity(chunkCap)
 		err := e.children[0].Next(ctx, srcChk)
 		if err != nil {
 			return errors.Trace(err)

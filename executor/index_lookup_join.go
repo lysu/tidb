@@ -56,9 +56,8 @@ type IndexLookUpJoin struct {
 	outerCtx outerCtx
 	innerCtx innerCtx
 
-	task       *lookUpJoinTask
-	joinResult *chunk.Chunk
-	innerIter  chunk.Iterator
+	task      *lookUpJoinTask
+	innerIter chunk.Iterator
 
 	resultGenerator joinResultGenerator
 
