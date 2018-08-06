@@ -631,8 +631,8 @@ func init() {
 		if err != nil {
 			return rows, errors.Trace(err)
 		}
+		chk := exec.newChunk()
 		for {
-			chk := exec.newChunk()
 			err = exec.Next(ctx, chk)
 			if err != nil {
 				return rows, errors.Trace(err)
@@ -645,6 +645,7 @@ func init() {
 				row := r.GetDatumRow(exec.retTypes())
 				rows = append(rows, row)
 			}
+			chk = exec.newChunkWithCapacity(chk.NumRows())
 		}
 	}
 }
