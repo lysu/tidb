@@ -323,11 +323,15 @@ func (e *TopNExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 
 func (e *TopNExec) loadChunksUntilTotalLimit(ctx context.Context) error {
 	e.chkHeap = &topNChunkHeap{e}
-	e.rowChunks = chunk.NewList(e.retTypes(), e.chunkCap, e.maxChunkSize)
+	chunkCap := e.totalLimit
+	if e.totalLimit > e.maxChunkSize {
+		chunkCap = e.maxChunkSize
+	}
+	e.rowChunks = chunk.NewList(e.retTypes(), chunkCap, e.maxChunkSize)
 	e.rowChunks.GetMemTracker().AttachTo(e.memTracker)
 	e.rowChunks.GetMemTracker().SetLabel("rowChunks")
 	for e.rowChunks.Len() < e.totalLimit {
-		srcChk := e.children[0].newChunkInLoop()
+		srcChk := chunk.NewChunkWithCapacity(e.children[0].retTypes(), chunkCap)
 		err := e.children[0].Next(ctx, srcChk)
 		if err != nil {
 			return errors.Trace(err)
