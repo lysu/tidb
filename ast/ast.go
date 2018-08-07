@@ -149,7 +149,7 @@ type RecordSet interface {
 	// NewChunk creates a new chunk with default capacity.
 	NewChunk() *chunk.Chunk
 
-	// NewChunk creates a new chunk with given capacity.
+	// NewChunkWithCapacity creates a new chunk with given capacity.
 	NewChunkWithCapacity(cap int) *chunk.Chunk
 
 	// Close closes the underlying iterator, call Next after Close will

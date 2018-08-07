@@ -387,10 +387,9 @@ func (b *executorBuilder) buildChecksumTable(v *plan.ChecksumTable) Executor {
 
 func (b *executorBuilder) buildDeallocate(v *plan.Deallocate) Executor {
 	e := &DeallocateExec{
-		baseExecutor: newBaseExecutor(b.ctx, nil, v.ExplainID()),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, nil, v.ExplainID(), chunk.VoidCapacity),
 		Name:         v.Name,
 	}
-	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -420,27 +419,27 @@ func (b *executorBuilder) buildLimit(v *plan.PhysicalLimit) Executor {
 		b.err = errors.Trace(b.err)
 		return nil
 	}
+	var initChunkSize int
+	if v.Count < uint64(b.ctx.GetSessionVars().MaxChunkSize) {
+		initChunkSize = int(v.Count)
+	} else {
+		initChunkSize = b.ctx.GetSessionVars().MaxChunkSize
+	}
 	e := &LimitExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), initChunkSize, childExec),
 		begin:        v.Offset,
 		end:          v.Offset + v.Count,
-	}
-	if v.Count < uint64(e.maxChunkSize) {
-		e.initChunkSize = int(v.Count)
-	} else {
-		e.initChunkSize = e.maxChunkSize
 	}
 	return e
 }
 
 func (b *executorBuilder) buildPrepare(v *plan.Prepare) Executor {
 	e := &PrepareExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), chunk.VoidCapacity),
 		is:           b.is,
 		name:         v.Name,
 		sqlText:      v.SQLText,
 	}
-	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -491,20 +490,18 @@ func (b *executorBuilder) buildSimple(v *plan.Simple) Executor {
 		return b.buildRevoke(s)
 	}
 	e := &SimpleExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), chunk.VoidCapacity),
 		Statement:    v.Statement,
 		is:           b.is,
 	}
-	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
 func (b *executorBuilder) buildSet(v *plan.Set) Executor {
 	e := &SetExecutor{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), chunk.VoidCapacity),
 		vars:         v.VarAssigns,
 	}
-	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -516,11 +513,10 @@ func (b *executorBuilder) buildInsert(v *plan.Insert) Executor {
 	}
 	var baseExec baseExecutor
 	if selectExec != nil {
-		baseExec = newBaseExecutor(b.ctx, nil, v.ExplainID(), selectExec)
+		baseExec = newBaseExecutorWithInitChunkSize(b.ctx, nil, v.ExplainID(), chunk.VoidCapacity, selectExec)
 	} else {
-		baseExec = newBaseExecutor(b.ctx, nil, v.ExplainID())
+		baseExec = newBaseExecutorWithInitChunkSize(b.ctx, nil, v.ExplainID(), chunk.VoidCapacity)
 	}
-	baseExec.initChunkSize = chunk.VoidCapacity
 
 	ivs := &InsertValues{
 		baseExecutor:          baseExec,
@@ -1074,10 +1070,9 @@ func (b *executorBuilder) buildTableDual(v *plan.PhysicalTableDual) Executor {
 		return nil
 	}
 	e := &TableDualExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), 1),
 		numDualRows:  v.RowCount,
 	}
-	e.initChunkSize = 1
 	// Init the startTS for later use.
 	b.getStartTS()
 	return e
@@ -1130,8 +1125,14 @@ func (b *executorBuilder) buildTopN(v *plan.PhysicalTopN) Executor {
 		b.err = errors.Trace(b.err)
 		return nil
 	}
+	var initChunkSize int
+	if v.Count < uint64(b.ctx.GetSessionVars().MaxChunkSize) {
+		initChunkSize = int(v.Count)
+	} else {
+		initChunkSize = b.ctx.GetSessionVars().MaxChunkSize
+	}
 	sortExec := SortExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), initChunkSize, childExec),
 		ByItems:      v.ByItems,
 		schema:       v.Schema(),
 	}
@@ -1139,11 +1140,6 @@ func (b *executorBuilder) buildTopN(v *plan.PhysicalTopN) Executor {
 	e := &TopNExec{
 		SortExec: sortExec,
 		limit:    &plan.PhysicalLimit{Count: v.Count, Offset: v.Offset},
-	}
-	if v.Count < uint64(e.maxChunkSize) {
-		e.initChunkSize = int(v.Count)
-	} else {
-		e.initChunkSize = e.maxChunkSize
 	}
 	return e
 }
@@ -1199,9 +1195,8 @@ func (b *executorBuilder) buildExists(v *plan.PhysicalExists) Executor {
 		return nil
 	}
 	e := &ExistsExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), 1, childExec),
 	}
-	e.initChunkSize = 1
 	return e
 }
 
@@ -1212,9 +1207,8 @@ func (b *executorBuilder) buildMaxOneRow(v *plan.PhysicalMaxOneRow) Executor {
 		return nil
 	}
 	e := &MaxOneRowExec{
-		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), 1, childExec),
 	}
-	e.initChunkSize = 1
 	return e
 }
 
@@ -1245,13 +1239,12 @@ func (b *executorBuilder) buildUpdate(v *plan.Update) Executor {
 	}
 	columns2Handle := buildColumns2Handle(v.Schema(), tblID2table)
 	updateExec := &UpdateExec{
-		baseExecutor:   newBaseExecutor(b.ctx, nil, v.ExplainID(), selExec),
+		baseExecutor:   newBaseExecutorWithInitChunkSize(b.ctx, nil, v.ExplainID(), chunk.VoidCapacity, selExec),
 		SelectExec:     selExec,
 		OrderedList:    v.OrderedList,
 		tblID2table:    tblID2table,
 		columns2Handle: columns2Handle,
 	}
-	updateExec.initChunkSize = chunk.VoidCapacity
 	return updateExec
 }
 
@@ -1325,13 +1318,12 @@ func (b *executorBuilder) buildDelete(v *plan.Delete) Executor {
 		return nil
 	}
 	deleteExec := &DeleteExec{
-		baseExecutor: newBaseExecutor(b.ctx, nil, v.ExplainID(), selExec),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, nil, v.ExplainID(), chunk.VoidCapacity, selExec),
 		SelectExec:   selExec,
 		Tables:       v.Tables,
 		IsMultiTable: v.IsMultiTable,
 		tblID2Table:  tblID2table,
 	}
-	deleteExec.initChunkSize = chunk.VoidCapacity
 	return deleteExec
 }
 

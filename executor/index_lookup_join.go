@@ -320,6 +320,7 @@ func (ow *outerWorker) pushToChan(ctx context.Context, task *lookUpJoinTask, dst
 
 // buildTask builds a lookUpJoinTask and read outer rows.
 // When err is not nil, task must not be nil to send the error to the main thread via task.
+// new initial chunk size will base on optional preTask.
 func (ow *outerWorker) buildTask(ctx context.Context, preTask *lookUpJoinTask) (*lookUpJoinTask, error) {
 	var outerResult *chunk.Chunk
 	if preTask == nil {
