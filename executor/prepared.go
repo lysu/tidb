@@ -91,7 +91,7 @@ func NewPrepareExec(ctx sessionctx.Context, is infoschema.InfoSchema, sqlTxt str
 		is:           is,
 		sqlText:      sqlTxt,
 	}
-	e.chunkCap = chunk.VoidCapacity
+	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 

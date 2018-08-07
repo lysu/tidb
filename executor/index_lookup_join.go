@@ -104,9 +104,9 @@ type outerWorker struct {
 
 	executorChk *chunk.Chunk
 
-	chunkCap     int
-	maxBatchSize int
-	batchSize    int
+	initChunkSize int
+	maxBatchSize  int
+	batchSize     int
 
 	resultCh chan<- *lookUpJoinTask
 	innerCh  chan<- *lookUpJoinTask
@@ -159,11 +159,11 @@ func (e *IndexLookUpJoin) newOuterWorker(resultCh, innerCh chan *lookUpJoinTask)
 		outerCtx:         e.outerCtx,
 		ctx:              e.ctx,
 		executor:         e.children[0],
-		executorChk:      chunk.NewChunkWithCapacity(e.outerCtx.rowTypes, e.chunkCap),
+		executorChk:      chunk.NewChunkWithCapacity(e.outerCtx.rowTypes, e.initChunkSize),
 		resultCh:         resultCh,
 		innerCh:          innerCh,
 		batchSize:        32,
-		chunkCap:         e.ctx.GetSessionVars().ChunkCap,
+		initChunkSize:    e.ctx.GetSessionVars().InitChunkSize,
 		maxBatchSize:     e.ctx.GetSessionVars().IndexJoinBatchSize,
 		parentMemTracker: e.memTracker,
 	}
@@ -181,7 +181,7 @@ func (e *IndexLookUpJoin) newInnerWorker(taskCh chan *lookUpJoinTask) *innerWork
 		outerCtx:      e.outerCtx,
 		taskCh:        taskCh,
 		ctx:           e.ctx,
-		executorChk:   chunk.NewChunkWithCapacity(e.innerCtx.rowTypes, e.chunkCap),
+		executorChk:   chunk.NewChunkWithCapacity(e.innerCtx.rowTypes, e.initChunkSize),
 		indexRanges:   copiedRanges,
 		keyOff2IdxOff: e.keyOff2IdxOff,
 	}
@@ -330,11 +330,11 @@ func (ow *outerWorker) buildTask(ctx context.Context, preTask *lookUpJoinTask) (
 	task := &lookUpJoinTask{
 		doneCh:            make(chan error, 1),
 		outerResult:       outerResult,
-		encodedLookUpKeys: chunk.NewChunkWithCapacity([]*types.FieldType{types.NewFieldType(mysql.TypeBlob)}, ow.chunkCap),
+		encodedLookUpKeys: chunk.NewChunkWithCapacity([]*types.FieldType{types.NewFieldType(mysql.TypeBlob)}, ow.initChunkSize),
 		lookupMap:         mvmap.NewMVMap(),
 	}
-	if ow.chunkCap < ow.ctx.GetSessionVars().MaxChunkSize {
-		ow.chunkCap <<= 1
+	if ow.initChunkSize < ow.ctx.GetSessionVars().MaxChunkSize {
+		ow.initChunkSize <<= 1
 	}
 	task.memTracker = memory.NewTracker(fmt.Sprintf("lookup join task %p", task), -1)
 	task.memTracker.AttachTo(ow.parentMemTracker)
@@ -522,7 +522,7 @@ func (iw *innerWorker) fetchInnerResults(ctx context.Context, task *lookUpJoinTa
 		return errors.Trace(err)
 	}
 	defer terror.Call(innerExec.Close)
-	innerResult := chunk.NewList(innerExec.retTypes(), iw.ctx.GetSessionVars().ChunkCap, iw.ctx.GetSessionVars().MaxChunkSize)
+	innerResult := chunk.NewList(innerExec.retTypes(), iw.ctx.GetSessionVars().InitChunkSize, iw.ctx.GetSessionVars().MaxChunkSize)
 	innerResult.GetMemTracker().SetLabel("inner result")
 	innerResult.GetMemTracker().AttachTo(task.memTracker)
 	for {

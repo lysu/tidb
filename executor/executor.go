@@ -66,7 +66,7 @@ type baseExecutor struct {
 	ctx           sessionctx.Context
 	id            string
 	schema        *expression.Schema
-	chunkCap      int
+	initChunkSize int
 	maxChunkSize  int
 	children      []Executor
 	retFieldTypes []*types.FieldType
@@ -104,7 +104,7 @@ func (e *baseExecutor) Schema() *expression.Schema {
 
 // newChunk creates a new chunk to buffer current executor's result.
 func (e *baseExecutor) newChunk() *chunk.Chunk {
-	return e.newChunkWithCapacity(e.chunkCap)
+	return e.newChunkWithCapacity(e.initChunkSize)
 }
 
 func (e *baseExecutor) newChunkWithCapacity(cap int) *chunk.Chunk {
@@ -123,12 +123,12 @@ func (e *baseExecutor) Next(ctx context.Context, chk *chunk.Chunk) error {
 
 func newBaseExecutor(ctx sessionctx.Context, schema *expression.Schema, id string, children ...Executor) baseExecutor {
 	e := baseExecutor{
-		children:     children,
-		ctx:          ctx,
-		id:           id,
-		schema:       schema,
-		chunkCap:     ctx.GetSessionVars().ChunkCap,
-		maxChunkSize: ctx.GetSessionVars().MaxChunkSize,
+		children:      children,
+		ctx:           ctx,
+		id:            id,
+		schema:        schema,
+		initChunkSize: ctx.GetSessionVars().InitChunkSize,
+		maxChunkSize:  ctx.GetSessionVars().MaxChunkSize,
 	}
 	if schema != nil {
 		cols := schema.Columns
@@ -818,7 +818,7 @@ func (e *TableScanExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 func (e *TableScanExec) nextChunk4InfoSchema(ctx context.Context, chk *chunk.Chunk) error {
 	chk.Reset()
 	if e.virtualTableChunkList == nil {
-		e.virtualTableChunkList = chunk.NewList(e.retTypes(), e.chunkCap, e.maxChunkSize)
+		e.virtualTableChunkList = chunk.NewList(e.retTypes(), e.initChunkSize, e.maxChunkSize)
 		columns := make([]*table.Column, e.schema.Len())
 		for i, colInfo := range e.columns {
 			columns[i] = table.ToColumn(colInfo)

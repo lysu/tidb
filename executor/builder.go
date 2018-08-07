@@ -390,7 +390,7 @@ func (b *executorBuilder) buildDeallocate(v *plan.Deallocate) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, nil, v.ExplainID()),
 		Name:         v.Name,
 	}
-	e.chunkCap = chunk.VoidCapacity
+	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -426,9 +426,9 @@ func (b *executorBuilder) buildLimit(v *plan.PhysicalLimit) Executor {
 		end:          v.Offset + v.Count,
 	}
 	if v.Count < uint64(e.maxChunkSize) {
-		e.chunkCap = int(v.Count)
+		e.initChunkSize = int(v.Count)
 	} else {
-		e.chunkCap = e.maxChunkSize
+		e.initChunkSize = e.maxChunkSize
 	}
 	return e
 }
@@ -440,7 +440,7 @@ func (b *executorBuilder) buildPrepare(v *plan.Prepare) Executor {
 		name:         v.Name,
 		sqlText:      v.SQLText,
 	}
-	e.chunkCap = chunk.VoidCapacity
+	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -495,7 +495,7 @@ func (b *executorBuilder) buildSimple(v *plan.Simple) Executor {
 		Statement:    v.Statement,
 		is:           b.is,
 	}
-	e.chunkCap = chunk.VoidCapacity
+	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -504,7 +504,7 @@ func (b *executorBuilder) buildSet(v *plan.Set) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
 		vars:         v.VarAssigns,
 	}
-	e.chunkCap = chunk.VoidCapacity
+	e.initChunkSize = chunk.VoidCapacity
 	return e
 }
 
@@ -520,7 +520,7 @@ func (b *executorBuilder) buildInsert(v *plan.Insert) Executor {
 	} else {
 		baseExec = newBaseExecutor(b.ctx, nil, v.ExplainID())
 	}
-	baseExec.chunkCap = chunk.VoidCapacity
+	baseExec.initChunkSize = chunk.VoidCapacity
 
 	ivs := &InsertValues{
 		baseExecutor:          baseExec,
@@ -1077,7 +1077,7 @@ func (b *executorBuilder) buildTableDual(v *plan.PhysicalTableDual) Executor {
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID()),
 		numDualRows:  v.RowCount,
 	}
-	e.chunkCap = 1
+	e.initChunkSize = 1
 	// Init the startTS for later use.
 	b.getStartTS()
 	return e
@@ -1141,9 +1141,9 @@ func (b *executorBuilder) buildTopN(v *plan.PhysicalTopN) Executor {
 		limit:    &plan.PhysicalLimit{Count: v.Count, Offset: v.Offset},
 	}
 	if v.Count < uint64(e.maxChunkSize) {
-		e.chunkCap = int(v.Count)
+		e.initChunkSize = int(v.Count)
 	} else {
-		e.chunkCap = e.maxChunkSize
+		e.initChunkSize = e.maxChunkSize
 	}
 	return e
 }
@@ -1201,7 +1201,7 @@ func (b *executorBuilder) buildExists(v *plan.PhysicalExists) Executor {
 	e := &ExistsExec{
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
 	}
-	e.chunkCap = 1
+	e.initChunkSize = 1
 	return e
 }
 
@@ -1214,7 +1214,7 @@ func (b *executorBuilder) buildMaxOneRow(v *plan.PhysicalMaxOneRow) Executor {
 	e := &MaxOneRowExec{
 		baseExecutor: newBaseExecutor(b.ctx, v.Schema(), v.ExplainID(), childExec),
 	}
-	e.chunkCap = 1
+	e.initChunkSize = 1
 	return e
 }
 
@@ -1251,7 +1251,7 @@ func (b *executorBuilder) buildUpdate(v *plan.Update) Executor {
 		tblID2table:    tblID2table,
 		columns2Handle: columns2Handle,
 	}
-	updateExec.chunkCap = chunk.VoidCapacity
+	updateExec.initChunkSize = chunk.VoidCapacity
 	return updateExec
 }
 
@@ -1331,7 +1331,7 @@ func (b *executorBuilder) buildDelete(v *plan.Delete) Executor {
 		IsMultiTable: v.IsMultiTable,
 		tblID2Table:  tblID2table,
 	}
-	deleteExec.chunkCap = chunk.VoidCapacity
+	deleteExec.initChunkSize = chunk.VoidCapacity
 	return deleteExec
 }
 

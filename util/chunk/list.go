@@ -21,12 +21,12 @@ import (
 
 // List holds a slice of chunks, use to append rows with max chunk size properly handled.
 type List struct {
-	fieldTypes   []*types.FieldType
-	maxChunkSize int
-	chunkCap     int
-	length       int
-	chunks       []*Chunk
-	freelist     []*Chunk
+	fieldTypes    []*types.FieldType
+	maxChunkSize  int
+	initChunkSize int
+	length        int
+	chunks        []*Chunk
+	freelist      []*Chunk
 
 	memTracker  *memory.Tracker // track memory usage.
 	consumedIdx int             // chunk index in "chunks", has been consumed.
@@ -40,13 +40,13 @@ type RowPtr struct {
 }
 
 // NewList creates a new List with field types and max chunk size.
-func NewList(fieldTypes []*types.FieldType, chunkCap, maxChunkSize int) *List {
+func NewList(fieldTypes []*types.FieldType, initChunkSize, maxChunkSize int) *List {
 	l := &List{
-		fieldTypes:   fieldTypes,
-		chunkCap:     chunkCap,
-		maxChunkSize: maxChunkSize,
-		memTracker:   memory.NewTracker("chunk.List", -1),
-		consumedIdx:  -1,
+		fieldTypes:    fieldTypes,
+		initChunkSize: initChunkSize,
+		maxChunkSize:  maxChunkSize,
+		memTracker:    memory.NewTracker("chunk.List", -1),
+		consumedIdx:   -1,
 	}
 	return l
 }
@@ -117,9 +117,9 @@ func (l *List) allocChunk() (chk *Chunk) {
 		chk.Reset()
 		return
 	}
-	newChk := NewChunkWithCapacity(l.fieldTypes, l.chunkCap)
-	if l.chunkCap < l.maxChunkSize {
-		l.chunkCap *= 2
+	newChk := NewChunkWithCapacity(l.fieldTypes, l.initChunkSize)
+	if l.initChunkSize < l.maxChunkSize {
+		l.initChunkSize *= 2
 	}
 	return newChk
 }

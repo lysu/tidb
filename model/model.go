@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"fmt"
 	"github.com/juju/errors"
 	"github.com/pingcap/tidb/mysql"
 	"github.com/pingcap/tidb/types"
@@ -141,6 +142,7 @@ type TableInfo struct {
 
 // GetPartitionInfo returns the partition information.
 func (t *TableInfo) GetPartitionInfo() *PartitionInfo {
+	fmt.Println()
 	if t.Partition != nil && t.Partition.Enable {
 		return t.Partition
 	}
