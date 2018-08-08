@@ -1137,11 +1137,10 @@ func (b *executorBuilder) buildTopN(v *plan.PhysicalTopN) Executor {
 		schema:       v.Schema(),
 	}
 	metrics.ExecutorCounter.WithLabelValues("TopNExec").Inc()
-	e := &TopNExec{
+	return &TopNExec{
 		SortExec: sortExec,
 		limit:    &plan.PhysicalLimit{Count: v.Count, Offset: v.Offset},
 	}
-	return e
 }
 
 func (b *executorBuilder) buildApply(apply *plan.PhysicalApply) *NestedLoopApplyExec {
