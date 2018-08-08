@@ -1088,7 +1088,7 @@ func (cc *clientConn) writeChunksWithFetchSize(ctx context.Context, rs ResultSet
 
 func (cc *clientConn) chunkCapacity(wantSize int) int {
 	if wantSize > variable.DefMaxChunkSize {
-		return variable.DefInitChunkSize
+		return variable.DefMaxChunkSize
 	}
 	return wantSize
 }
