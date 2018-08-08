@@ -13,6 +13,8 @@
 
 package variable
 
+import "github.com/pingcap/tidb/util/chunk"
+
 /*
 	Steps to add a new TiDB specific system variable:
 
@@ -196,7 +198,7 @@ const (
 	DefBatchDelete                   = false
 	DefCurretTS                      = 0
 	DefMaxChunkSize                  = 1024
-	DefInitChunkSize                 = 32
+	DefInitChunkSize                 = chunk.InitialCapacity
 	DefDMLBatchSize                  = 20000
 	DefTiDBMemQuotaHashJoin          = 32 << 30 // 32GB.
 	DefTiDBMemQuotaMergeJoin         = 32 << 30 // 32GB.

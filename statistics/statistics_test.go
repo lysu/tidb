@@ -94,7 +94,7 @@ func (r *recordSet) Next(ctx context.Context, chk *chunk.Chunk) error {
 }
 
 func (r *recordSet) NewChunk() *chunk.Chunk {
-	return r.NewChunkWithCapacity(32)
+	return r.NewChunkWithCapacity(chunk.InitialCapacity)
 }
 
 func (r *recordSet) NewChunkWithCapacity(cap int) *chunk.Chunk {
