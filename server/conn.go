@@ -55,6 +55,7 @@ import (
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/mysql"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/terror"
 	"github.com/pingcap/tidb/util/arena"
 	"github.com/pingcap/tidb/util/auth"
@@ -1086,8 +1087,8 @@ func (cc *clientConn) writeChunksWithFetchSize(ctx context.Context, rs ResultSet
 }
 
 func (cc *clientConn) chunkCapacity(wantSize int) int {
-	if wantSize > 1024 {
-		return 1024
+	if wantSize > variable.DefMaxChunkSize {
+		return variable.DefInitChunkSize
 	}
 	return wantSize
 }

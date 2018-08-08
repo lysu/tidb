@@ -335,7 +335,7 @@ func (ow *outerWorker) buildTask(ctx context.Context, preTask *lookUpJoinTask) (
 		lookupMap:         mvmap.NewMVMap(),
 	}
 	if ow.initChunkSize < ow.ctx.GetSessionVars().MaxChunkSize {
-		ow.initChunkSize <<= 1
+		ow.initChunkSize *= 2
 	}
 	task.memTracker = memory.NewTracker(fmt.Sprintf("lookup join task %p", task), -1)
 	task.memTracker.AttachTo(ow.parentMemTracker)

@@ -367,7 +367,7 @@ func (e *TopNExec) executeTopN(ctx context.Context) error {
 	if e.keyChunks != nil {
 		childKeyChk = chunk.NewChunkWithCapacity(e.keyTypes, e.initChunkSize)
 		if e.initChunkSize < e.maxChunkSize {
-			e.initChunkSize <<= 1
+			e.initChunkSize *= 2
 		}
 	}
 	childRowChk := e.children[0].newChunk()
