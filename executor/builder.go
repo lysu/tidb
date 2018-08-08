@@ -1070,7 +1070,7 @@ func (b *executorBuilder) buildTableDual(v *plan.PhysicalTableDual) Executor {
 		return nil
 	}
 	e := &TableDualExec{
-		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), 1),
+		baseExecutor: newBaseExecutorWithInitChunkSize(b.ctx, v.Schema(), v.ExplainID(), v.RowCount),
 		numDualRows:  v.RowCount,
 	}
 	// Init the startTS for later use.
