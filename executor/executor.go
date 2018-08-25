@@ -721,14 +721,16 @@ func (e *SelectionExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 	}
 
 	for {
-		for ; e.inputRow != e.inputIter.End(); e.inputRow = e.inputIter.Next() {
-			if !e.selected[e.inputRow.Idx()] {
-				continue
+		if e.childResult.NumCols() == 0 {
+			for ; e.inputRow != e.inputIter.End(); e.inputRow = e.inputIter.Next() {
+				if !e.selected[e.inputRow.Idx()] {
+					continue
+				}
+				if chk.NumRows() == e.maxChunkSize {
+					return nil
+				}
+				chk.AppendRow(e.inputRow)
 			}
-			if chk.NumRows() == e.maxChunkSize {
-				return nil
-			}
-			chk.AppendRow(e.inputRow)
 		}
 		err := e.children[0].Next(ctx, e.childResult)
 		if err != nil {
@@ -742,7 +744,12 @@ func (e *SelectionExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		e.inputRow = e.inputIter.Begin()
+		if e.childResult.NumCols() != 0 {
+			// FIX ME: check max_chunk_size.
+			chk.FilterThenAppend(e.selected, e.childResult)
+		} else {
+			e.inputRow = e.inputIter.Begin()
+		}
 	}
 }
 
