@@ -685,6 +685,7 @@ type SelectionExec struct {
 	batched     bool
 	filters     []expression.Expression
 	selected    []bool
+	mask        *chunk.Bitmap
 	inputIter   *chunk.Iterator4Chunk
 	inputRow    chunk.Row
 	childResult *chunk.Chunk
@@ -699,6 +700,7 @@ func (e *SelectionExec) Open(ctx context.Context) error {
 	e.batched = expression.Vectorizable(e.filters)
 	if e.batched {
 		e.selected = make([]bool, 0, chunk.InitialCapacity)
+		e.mask = chunk.NewBitMap(chunk.InitialCapacity)
 	}
 	e.inputIter = chunk.NewIterator4Chunk(e.childResult)
 	e.inputRow = e.inputIter.End()
@@ -709,6 +711,7 @@ func (e *SelectionExec) Open(ctx context.Context) error {
 func (e *SelectionExec) Close() error {
 	e.childResult = nil
 	e.selected = nil
+	e.mask = nil
 	return errors.Trace(e.baseExecutor.Close())
 }
 
@@ -740,13 +743,17 @@ func (e *SelectionExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 		if e.childResult.NumRows() == 0 {
 			return nil
 		}
-		e.selected, err = expression.VectorizedFilter(e.ctx, e.filters, e.inputIter, e.selected)
-		if err != nil {
-			return errors.Trace(err)
+		if e.childResult.NumCols() != 0 {
+			// TODO: fixme
+		} else {
+			e.selected, err = expression.VectorizedFilter(e.ctx, e.filters, e.inputIter, e.selected)
+			if err != nil {
+				return errors.Trace(err)
+			}
 		}
 		if e.childResult.NumCols() != 0 {
 			// FIX ME: check max_chunk_size.
-			chk.FilterThenAppend(e.selected, e.childResult)
+			chk.FilterThenAppend(e.mask, e.childResult)
 		} else {
 			e.inputRow = e.inputIter.Begin()
 		}

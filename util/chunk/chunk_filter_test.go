@@ -26,7 +26,7 @@ func BenchmarkByColumnMod3Int64Column(b *testing.B) {
 	inputSize := 1024
 	ic := setupInt64Chunk(inputSize)
 	oc := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeLong}, {Tp: mysql.TypeLong}, {Tp: mysql.TypeLong}}, inputSize)
-	mask := make([]bool, inputSize)
+	mask := NewBitMap(inputSize)
 	for i := 0; i < b.N; i++ {
 		copyFilterInt64ViaCol(ic, oc, mask, mod)
 	}
@@ -45,7 +45,7 @@ func BenchmarkByColumnGt3Int64Column(b *testing.B) {
 	inputSize := 1024
 	ic := setupInt64Chunk(inputSize)
 	oc := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeLong}, {Tp: mysql.TypeLong}, {Tp: mysql.TypeLong}}, inputSize)
-	mask := make([]bool, inputSize)
+	mask := NewBitMap(inputSize)
 	for i := 0; i < b.N; i++ {
 		copyFilterInt64ViaCol(ic, oc, mask, gt)
 	}
@@ -64,7 +64,7 @@ func BenchmarkByColumnMod3StrColumn(b *testing.B) {
 	inputSize := 1024
 	ic := setupStrChunk(inputSize, mod)
 	oc := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeVarchar}, {Tp: mysql.TypeVarchar}, {Tp: mysql.TypeVarchar}}, inputSize)
-	mask := make([]bool, inputSize)
+	mask := NewBitMap(1024)
 	for i := 0; i < b.N; i++ {
 		copyFilterStrViaCol(ic, oc, mask)
 	}
@@ -83,7 +83,7 @@ func BenchmarkByColumnGt3StrColumn(b *testing.B) {
 	inputSize := 1024
 	ic := setupStrChunk(inputSize, gt)
 	oc := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeVarchar}, {Tp: mysql.TypeVarchar}, {Tp: mysql.TypeVarchar}}, inputSize)
-	mask := make([]bool, inputSize)
+	mask := NewBitMap(1024)
 	for i := 0; i < b.N; i++ {
 		copyFilterStrViaCol(ic, oc, mask)
 	}
@@ -146,23 +146,24 @@ func copyFilterInt64ViaRow(ic, oc *Chunk, op opType) {
 	}
 }
 
-func copyFilterInt64ViaCol(ic, oc *Chunk, mask []bool, op opType) {
+func copyFilterInt64ViaCol(ic, oc *Chunk, mask *Bitmap, op opType) {
 	oc.Reset()
-	mask = mask[0:]
+	mask.Reset()
 	iter := NewIterator4Chunk(ic)
-	idx := 0
 	for r := iter.Begin(); r != iter.End(); r = iter.Next() {
 		switch op {
 		case gt:
 			if r.GetInt64(0) > 512 {
-				mask[idx] = true
+				mask.Append(true)
+			} else {
+				mask.Append(false)
 			}
-			idx++
 		case mod:
 			if r.GetInt64(0)%3 == 0 {
-				mask[idx] = true
+				mask.Append(true)
+			} else {
+				mask.Append(false)
 			}
-			idx++
 		}
 	}
 	oc.FilterThenAppend(mask, ic)
@@ -178,16 +179,16 @@ func copyFilterStrViaRow(ic, oc *Chunk) {
 	}
 }
 
-func copyFilterStrViaCol(ic, oc *Chunk, mask []bool) {
+func copyFilterStrViaCol(ic, oc *Chunk, mask *Bitmap) {
 	oc.Reset()
-	mask = mask[0:]
+	mask.Reset()
 	iter := NewIterator4Chunk(ic)
-	idx := 0
 	for r := iter.Begin(); r != iter.End(); r = iter.Next() {
 		if r.GetString(0) == "abc" {
-			mask[idx] = true
+			mask.Append(true)
+		} else {
+			mask.Append(false)
 		}
-		idx++
 	}
 	oc.FilterThenAppend(mask, ic)
 }
@@ -201,10 +202,10 @@ func TestFilterFixedType(t *testing.T) {
 	oc1 := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeLong}}, 10)
 	oc1.Append(ic, 0, ic.NumRows())
 
-	mask := make([]bool, 3)
-	mask[0] = true
-	mask[1] = true
-	mask[2] = true
+	mask := NewBitMap(1)
+	mask.Append(true)
+	mask.Append(true)
+	mask.Append(true)
 	oc2 := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeLong}}, 10)
 	oc2.FilterThenAppend(mask, ic)
 
@@ -219,10 +220,10 @@ func TestFilterVarType(t *testing.T) {
 	oc1 := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeVarchar}}, 10)
 	oc1.Append(ic, 0, ic.NumRows())
 
-	mask := make([]bool, 3)
-	mask[0] = true
-	mask[1] = true
-	mask[2] = true
+	mask := NewBitMap(1)
+	mask.Append(true)
+	mask.Append(true)
+	mask.Append(true)
 	oc2 := NewChunkWithCapacity([]*types.FieldType{{Tp: mysql.TypeVarchar}}, 10)
 	oc2.FilterThenAppend(mask, ic)
 }

@@ -255,56 +255,59 @@ func (c *Chunk) Append(other *Chunk, begin, end int) {
 }
 
 // FilterThenAppend filters rows meet mask and append them into self from another chunk.
-func (c *Chunk) FilterThenAppend(mask []bool, other *Chunk) {
+func (c *Chunk) FilterThenAppend(mask *Bitmap, other *Chunk) {
 	rowsInChk := other.NumRows()
 	for colIdx, col := range other.columns {
 		outputCol := c.columns[colIdx]
 		if col.isFixed() {
 			elemLen := len(col.elemBuf)
 			start, end, pending := 0, 0, false
+			mChecker := mask.MapChecker()
 			for i := 0; i < rowsInChk; i++ {
-				if !mask[i] {
+				if mChecker.NextNoMarked() {
 					if pending {
 						outputCol.data = append(outputCol.data, col.data[start*elemLen:end*elemLen]...)
 						pending = false
 					}
-					continue
-				}
-				if pending {
-					end = i + 1
 				} else {
-					start = i
-					end = i + 1
-					pending = true
-				}
-				outputCol.appendNullBitmap(!col.isNull(i))
-				outputCol.length++
-				if i == rowsInChk-1 {
-					outputCol.data = append(outputCol.data, col.data[start*elemLen:(end)*elemLen]...)
+					if pending {
+						end = i + 1
+					} else {
+						start = i
+						end = i + 1
+						pending = true
+					}
+					notNull := !col.isNull(i)
+					outputCol.appendNullBitmap(notNull)
+					outputCol.length++
+					if i == rowsInChk-1 {
+						outputCol.data = append(outputCol.data, col.data[start*elemLen:(end)*elemLen]...)
+					}
 				}
 			}
 		} else {
 			start, end, pending := int32(0), int32(0), false
+			mChecker := mask.MapChecker()
 			for i := 0; i < rowsInChk; i++ {
-				if !mask[i] {
+				if mChecker.NextNoMarked() {
 					if pending {
 						outputCol.data = append(outputCol.data, col.data[start:end]...)
 						pending = false
 					}
-					continue
-				}
-				if pending {
-					end = col.offsets[i+1]
 				} else {
-					start = col.offsets[i]
-					end = col.offsets[i+1]
-					pending = true
-				}
-				outputCol.offsets = append(outputCol.offsets, outputCol.offsets[len(outputCol.offsets)-1]+col.offsets[i+1]-col.offsets[i])
-				outputCol.appendNullBitmap(!col.isNull(i))
-				outputCol.length++
-				if i == rowsInChk-1 {
-					outputCol.data = append(outputCol.data, col.data[start:end]...)
+					if pending {
+						end = col.offsets[i+1]
+					} else {
+						start = col.offsets[i]
+						end = col.offsets[i+1]
+						pending = true
+					}
+					outputCol.offsets = append(outputCol.offsets, outputCol.offsets[len(outputCol.offsets)-1]+col.offsets[i+1]-col.offsets[i])
+					outputCol.appendNullBitmap(!col.isNull(i))
+					outputCol.length++
+					if i == rowsInChk-1 {
+						outputCol.data = append(outputCol.data, col.data[start:end]...)
+					}
 				}
 			}
 		}
