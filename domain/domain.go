@@ -623,7 +623,7 @@ func (do *Domain) UpdateTableStatsLoop(ctx sessionctx.Context) error {
 	go do.updateStatsWorker(ctx, owner)
 	if RunAutoAnalyze {
 		do.wg.Add(1)
-		go do.autoAnalyzeWorker(owner)
+		//go do.autoAnalyzeWorker(owner)
 	}
 	return nil
 }

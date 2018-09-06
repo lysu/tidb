@@ -31,6 +31,7 @@ import (
 	binlog "github.com/pingcap/tipb/go-binlog"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"runtime/trace"
 )
 
 type twoPhaseCommitAction int
@@ -336,10 +337,12 @@ func (c *twoPhaseCommitter) prewriteSingleBatch(bo *Backoffer, batch batchKeys) 
 		},
 	}
 	for {
+		s := trace.StartRegion(bo.ctx, "send-prewrite")
 		resp, err := c.store.SendReq(bo, req, batch.region, readTimeoutShort)
 		if err != nil {
 			return errors.Trace(err)
 		}
+		s.End()
 		regionErr, err := resp.GetRegionError()
 		if err != nil {
 			return errors.Trace(err)
@@ -433,8 +436,12 @@ func (c *twoPhaseCommitter) commitSingleBatch(bo *Backoffer, batch batchKeys) er
 	}
 	req.Context.Priority = c.priority
 
+	s := trace.StartRegion(bo.ctx, "send-commit")
+
 	sender := NewRegionRequestSender(c.store.regionCache, c.store.client)
 	resp, err := sender.SendReq(bo, req, batch.region, readTimeoutShort)
+
+	s.End()
 
 	// If we fail to receive response for the request that commits primary key, it will be undetermined whether this
 	// transaction has been successfully committed.
@@ -506,10 +513,12 @@ func (c *twoPhaseCommitter) cleanupSingleBatch(bo *Backoffer, batch batchKeys) e
 			SyncLog:  c.syncLog,
 		},
 	}
+	s := trace.StartRegion(bo.ctx, "send-cleanup")
 	resp, err := c.store.SendReq(bo, req, batch.region, readTimeoutShort)
 	if err != nil {
 		return errors.Trace(err)
 	}
+	s.End()
 	regionErr, err := resp.GetRegionError()
 	if err != nil {
 		return errors.Trace(err)
@@ -560,7 +569,9 @@ func (c *twoPhaseCommitter) executeAndWriteFinishBinlog(ctx context.Context) err
 
 // execute executes the two-phase commit protocol.
 func (c *twoPhaseCommitter) execute(ctx context.Context) error {
+	tr := trace.StartRegion(ctx, "2pc-commit")
 	defer func() {
+		tr.End()
 		// Always clean up all written keys if the txn does not commit.
 		c.mu.RLock()
 		committed := c.mu.committed
@@ -581,6 +592,7 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) error {
 		}
 	}()
 
+	pw := trace.StartRegion(ctx, "prewrite")
 	binlogChan := c.prewriteBinlog()
 	err := c.prewriteKeys(NewBackoffer(ctx, prewriteMaxBackoff).WithVars(c.txn.vars), c.keys)
 	if binlogChan != nil {
@@ -593,7 +605,10 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) error {
 		log.Debugf("con:%d 2PC failed on prewrite: %v, tid: %d", c.connID, err, c.startTS)
 		return errors.Trace(err)
 	}
+	pw.End()
 
+
+	tsr := trace.StartRegion(ctx, "get commitTs")
 	commitTS, err := c.store.getTimestampWithRetry(NewBackoffer(ctx, tsoMaxBackoff).WithVars(c.txn.vars))
 	if err != nil {
 		log.Warnf("con:%d 2PC get commitTS failed: %v, tid: %d", c.connID, err, c.startTS)
@@ -616,6 +631,7 @@ func (c *twoPhaseCommitter) execute(ctx context.Context) error {
 		err = errors.Errorf("con:%d txn takes too much time, start: %d, commit: %d", c.connID, c.startTS, c.commitTS)
 		return errors.Annotate(err, txnRetryableMark)
 	}
+	tsr.End()
 
 	err = c.commitKeys(NewBackoffer(ctx, CommitMaxBackoff).WithVars(c.txn.vars), c.keys)
 	if err != nil {
