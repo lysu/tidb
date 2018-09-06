@@ -35,6 +35,7 @@ import (
 	"github.com/pingcap/tidb/util/logutil"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"runtime/trace"
 )
 
 type processinfoSetter interface {
@@ -199,15 +200,19 @@ func (a *ExecStmt) Exec(ctx context.Context) (ast.RecordSet, error) {
 		}()
 	}
 
+	bp := trace.StartRegion(ctx, "buildExec")
 	e, err := a.buildExecutor(sctx)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	bp.End()
 
+	open := trace.StartRegion(ctx, "openExec")
 	if err := e.Open(ctx); err != nil {
 		terror.Call(e.Close)
 		return nil, errors.Trace(err)
 	}
+	open.End()
 
 	var pi processinfoSetter
 	if raw, ok := sctx.(processinfoSetter); ok {
@@ -264,10 +269,12 @@ func (a *ExecStmt) handleNoDelayExecutor(ctx context.Context, sctx sessionctx.Co
 		a.logSlowQuery(txnTS, err == nil)
 	}()
 
+	nr := trace.StartRegion(ctx, "No Delay Next")
 	err = e.Next(ctx, e.newChunk())
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	nr.End()
 
 	return nil, nil
 }

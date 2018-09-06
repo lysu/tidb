@@ -22,6 +22,7 @@ import (
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
 	"golang.org/x/net/context"
+	"runtime/trace"
 )
 
 // UpdateExec represents a new update executor.
@@ -114,12 +115,15 @@ func (e *UpdateExec) canNotUpdate(handle types.Datum) bool {
 func (e *UpdateExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 	chk.Reset()
 	if !e.fetched {
+		fRegion := trace.StartRegion(ctx, "updateFetch")
 		err := e.fetchChunkRows(ctx)
 		if err != nil {
 			return errors.Trace(err)
 		}
+		fRegion.End()
 		e.fetched = true
 
+		eRegion := trace.StartRegion(ctx, "updateExec")
 		for {
 			row, err := e.exec(e.children[0].Schema())
 			if err != nil {
@@ -129,6 +133,7 @@ func (e *UpdateExec) Next(ctx context.Context, chk *chunk.Chunk) error {
 			// once "row == nil" there is no more data waiting to be updated,
 			// the execution of UpdateExec is finished.
 			if row == nil {
+				eRegion.End()
 				break
 			}
 		}
@@ -141,16 +146,19 @@ func (e *UpdateExec) fetchChunkRows(ctx context.Context) error {
 	fields := e.children[0].retTypes()
 	globalRowIdx := 0
 	for {
+		nr := trace.StartRegion(ctx, "next")
 		chk := e.children[0].newChunk()
 		err := e.children[0].Next(ctx, chk)
 		if err != nil {
 			return errors.Trace(err)
 		}
+		nr.End()
 
 		if chk.NumRows() == 0 {
 			break
 		}
 
+		mr := trace.StartRegion(ctx, "misc")
 		for rowIdx := 0; rowIdx < chk.NumRows(); rowIdx++ {
 			chunkRow := chk.GetRow(rowIdx)
 			datumRow := chunkRow.GetDatumRow(fields)
@@ -162,6 +170,7 @@ func (e *UpdateExec) fetchChunkRows(ctx context.Context) error {
 			e.newRowsData = append(e.newRowsData, newRow)
 			globalRowIdx++
 		}
+		mr.End()
 	}
 	return nil
 }

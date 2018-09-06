@@ -54,9 +54,10 @@ import (
 	"github.com/pingcap/tidb/util/charset"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/kvcache"
-	binlog "github.com/pingcap/tipb/go-binlog"
+	"github.com/pingcap/tipb/go-binlog"
 	log "github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
+	"runtime/trace"
 )
 
 // Session context
@@ -732,11 +733,15 @@ func (s *session) executeStatement(ctx context.Context, connID uint64, stmtNode 
 		}
 		return nil, errors.Trace(err)
 	}
+
+
+	mr := trace.StartRegion(ctx, "prom")
 	metrics.SessionExecuteRunDuration.Observe(time.Since(startTime).Seconds())
 
 	if recordSet != nil {
 		recordSets = append(recordSets, recordSet)
 	}
+	mr.End()
 	return recordSets, nil
 }
 
@@ -749,6 +754,8 @@ func (s *session) Execute(ctx context.Context, sql string) (recordSets []ast.Rec
 }
 
 func (s *session) execute(ctx context.Context, sql string) (recordSets []ast.RecordSet, err error) {
+	ctx, sessionTask := trace.NewTask(ctx, "sessionExec")
+	trace.Log(ctx, "sql", sql)
 	s.PrepareTxnCtx(ctx)
 	connID := s.sessionVars.ConnectionID
 	err = s.loadCommonGlobalVariablesIfNeeded()
@@ -758,6 +765,7 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []ast.Rec
 
 	charsetInfo, collation := s.sessionVars.GetCharsetInfo()
 
+	pr := trace.StartRegion(ctx, "parse")
 	// Step1: Compile query string to abstract syntax trees(ASTs).
 	startTS := time.Now()
 	stmtNodes, err := s.ParseSQL(ctx, sql, charsetInfo, collation)
@@ -767,11 +775,13 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []ast.Rec
 		return nil, errors.Trace(err)
 	}
 	metrics.SessionExecuteParseDuration.Observe(time.Since(startTS).Seconds())
+	pr.End()
 
 	compiler := executor.Compiler{Ctx: s}
 	for _, stmtNode := range stmtNodes {
 		s.PrepareTxnCtx(ctx)
 
+		pl := trace.StartRegion(ctx, "plan")
 		// Step2: Transform abstract syntax tree to a physical plan(stored in executor.ExecStmt).
 		startTS = time.Now()
 		// Some executions are done in compile stage, so we reset them before compile.
@@ -785,17 +795,21 @@ func (s *session) execute(ctx context.Context, sql string) (recordSets []ast.Rec
 			return nil, errors.Trace(err)
 		}
 		metrics.SessionExecuteCompileDuration.Observe(time.Since(startTS).Seconds())
+		pl.End()
 
+		ep := trace.StartRegion(ctx, "execPlan")
 		// Step3: Execute the physical plan.
 		if recordSets, err = s.executeStatement(ctx, connID, stmtNode, stmt, recordSets); err != nil {
 			return nil, errors.Trace(err)
 		}
+		ep.End()
 	}
 
 	if s.sessionVars.ClientCapability&mysql.ClientMultiResults == 0 && len(recordSets) > 1 {
 		// return the first recordset if client doesn't support ClientMultiResults.
 		recordSets = recordSets[:1]
 	}
+	sessionTask.End()
 	return recordSets, nil
 }
 
