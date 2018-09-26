@@ -120,6 +120,7 @@ type ExplainStmt struct {
 
 	Stmt   StmtNode
 	Format string
+	Analyze bool
 }
 
 // Accept implements Node Accept interface.
