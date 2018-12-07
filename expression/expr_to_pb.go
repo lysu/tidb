@@ -308,7 +308,7 @@ func (pc PbConverter) canFuncBePushed(sf *ScalarFunction) bool {
 		ast.Ceil,
 		ast.Ceiling,
 		ast.Floor,
-		ast.Mod,
+		//ast.Mod,
 
 		// control flow functions.
 		ast.Case,
@@ -329,10 +329,10 @@ func (pc PbConverter) canFuncBePushed(sf *ScalarFunction) bool {
 		ast.JSONRemove,
 
 		// date functions.
-		ast.DateFormat,
+		ast.DateFormat:
 
-		ast.Cast,
-		ast.Substr:
+		//ast.Cast,
+		//ast.Substr:
 
 		return true
 	}
