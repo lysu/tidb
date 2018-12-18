@@ -345,7 +345,8 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool) {
 	}
 	cfg := config.GetGlobalConfig()
 	costTime := time.Since(a.StartTime)
-	threshold := time.Duration(atomic.LoadUint64(&cfg.Log.SlowThreshold)) * time.Millisecond
+	//threshold := time.Duration(atomic.LoadUint64(&cfg.Log.SlowThreshold)) * time.Millisecond
+	threshold := time.Duration(0)
 	if costTime < threshold && level < log.DebugLevel {
 		return
 	}
