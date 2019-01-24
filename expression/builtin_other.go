@@ -23,6 +23,7 @@ import (
 	"github.com/pingcap/tidb/types/json"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tipb/go-tipb"
+	"fmt"
 )
 
 var (
@@ -35,6 +36,7 @@ var (
 	_ functionClass = &valuesFunctionClass{}
 	_ functionClass = &bitCountFunctionClass{}
 	_ functionClass = &getParamFunctionClass{}
+	_ functionClass = &tidbKeyMvccFunctionClass{}
 )
 
 var (
@@ -60,6 +62,7 @@ var (
 	_ builtinFunc = &builtinValuesJSONSig{}
 	_ builtinFunc = &builtinBitCountSig{}
 	_ builtinFunc = &builtinGetParamStringSig{}
+	_ builtinFunc = &builtinTiDBKeyMvccSig{}
 )
 
 type inFunctionClass struct {
@@ -797,4 +800,37 @@ func (b *builtinGetParamStringSig) evalString(row chunk.Row) (string, bool, erro
 		return "", true, nil
 	}
 	return str, false, nil
+}
+
+type tidbKeyMvccFunctionClass struct {
+	baseFunctionClass
+}
+
+func (c *tidbKeyMvccFunctionClass) getFunction(ctx sessionctx.Context, args []Expression) (builtinFunc, error) {
+	if err := c.verifyArgs(args); err != nil {
+		return nil, err
+	}
+	bf := newBaseBuiltinFuncWithTp(ctx, args, types.ETString, types.ETInt)
+	bf.tp.Flen = mysql.MaxFieldVarCharLength
+	sig := &builtinTiDBKeyMvccSig{bf}
+	return sig, nil
+}
+
+type builtinTiDBKeyMvccSig struct {
+	baseBuiltinFunc
+}
+
+func (b *builtinTiDBKeyMvccSig) Clone() builtinFunc {
+	newSig := &builtinTiDBKeyMvccSig{}
+	newSig.cloneFrom(&b.baseBuiltinFunc)
+	return newSig
+}
+
+func (b *builtinTiDBKeyMvccSig) evalString(row chunk.Row) (string, bool, error) {
+	idxName, isNull, err := b.args[0].EvalString(b.ctx, row)
+	if isNull || err != nil {
+		return "", isNull, err
+	}
+	fmt.Println(idxName)
+	return "1", false, nil
 }
