@@ -315,6 +315,20 @@ func (s *testSessionSuite) TestRowLock(c *C) {
 	tk1.MustExec("commit")
 }
 
+// TestAutoCommitPrepareRollback. see https://github.com/pingcap/tidb/issues/9130
+func (s *testSessionSuite) TestAutoCommitPrepareRollback(c *C) {
+	tk := testkit.NewTestKitWithInit(c, s.store)
+	tk.MustExec("drop table if exists t")
+	tk.MustExec("create table t (id int)")
+
+	tk.MustExec("prepare p from \"insert into t (id) values (?)\"")
+	tk.MustExec("set @a=1")
+	tk.MustExec("set autocommit=0")
+	tk.MustExec("execute p using @a")
+	tk.MustExec("rollback")
+	tk.MustQuery("select * from t").Check(testkit.Rows())
+}
+
 // TestAutocommit . See https://dev.mysql.com/doc/internals/en/status-flags.html
 func (s *testSessionSuite) TestAutocommit(c *C) {
 	tk := testkit.NewTestKitWithInit(c, s.store)
