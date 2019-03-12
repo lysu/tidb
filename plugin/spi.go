@@ -18,6 +18,7 @@ import (
 	"reflect"
 	"unsafe"
 
+	"github.com/coreos/etcd/clientv3"
 	"github.com/pingcap/parser/auth"
 	"github.com/pingcap/tidb/sessionctx/variable"
 )
@@ -29,6 +30,24 @@ const (
 	// Plugin take manifest info from this symbol.
 	ManifestSymbol = "PluginManifest"
 )
+
+// Plugin presents a TiDB plugin.
+type Plugin struct {
+	*Manifest
+	State State
+	Path  string
+}
+
+// Config presents the init configuration for plugin framework.
+type Config struct {
+	Plugins        []string
+	PluginDir      string
+	GlobalSysVar   *map[string]*variable.SysVar
+	PluginVarNames *[]string
+	SkipWhenFail   bool
+	EnvVersion     map[string]uint16
+	EtcdClient     *clientv3.Client
+}
 
 // Manifest describes plugin info and how it can do by plugin itself.
 type Manifest struct {

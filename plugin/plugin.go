@@ -15,9 +15,6 @@ package plugin
 
 import (
 	"context"
-	"path/filepath"
-	gplugin "plugin"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"unsafe"
@@ -77,25 +74,6 @@ func (p plugins) add(plugin *Plugin) {
 // plugins got plugin in COW context.
 func (p copyOnWriteContext) plugins() *plugins {
 	return (*plugins)(atomic.LoadPointer(&p.tiPlugins))
-}
-
-// Config presents the init configuration for plugin framework.
-type Config struct {
-	Plugins        []string
-	PluginDir      string
-	GlobalSysVar   *map[string]*variable.SysVar
-	PluginVarNames *[]string
-	SkipWhenFail   bool
-	EnvVersion     map[string]uint16
-	EtcdClient     *clientv3.Client
-}
-
-// Plugin presents a TiDB plugin.
-type Plugin struct {
-	*Manifest
-	library *gplugin.Plugin
-	State   State
-	Path    string
 }
 
 type validateMode int
@@ -180,7 +158,7 @@ func Init(ctx context.Context, cfg Config) (err error) {
 			return
 		}
 		// Load dl.
-		var plugin Plugin
+		var plugin *Plugin
 		plugin, err = loadOne(cfg.PluginDir, ID(pluginID))
 		if err != nil {
 			if cfg.SkipWhenFail {
@@ -188,7 +166,9 @@ func Init(ctx context.Context, cfg Config) (err error) {
 			}
 			return
 		}
-		tiPlugins.add(&plugin)
+		if plugin != nil {
+			tiPlugins.add(plugin)
+		}
 	}
 
 	// Cross validate & Load plugins.
@@ -274,40 +254,6 @@ func (w *flushWatcher) watchLoop() {
 			}
 		}
 	}
-}
-
-func loadOne(dir string, pluginID ID) (plugin Plugin, err error) {
-	plugin.Path = filepath.Join(dir, string(pluginID)+LibrarySuffix)
-	plugin.library, err = gplugin.Open(plugin.Path)
-	if err != nil {
-		err = errors.Trace(err)
-		return
-	}
-	manifestSym, err := plugin.library.Lookup(ManifestSymbol)
-	if err != nil {
-		err = errors.Trace(err)
-		return
-	}
-	manifest, ok := manifestSym.(func() *Manifest)
-	if !ok {
-		err = errInvalidPluginManifest.GenWithStackByArgs(string(pluginID))
-		return
-	}
-	pName, pVersion, err := pluginID.Decode()
-	if err != nil {
-		err = errors.Trace(err)
-		return
-	}
-	plugin.Manifest = manifest()
-	if plugin.Name != pName {
-		err = errInvalidPluginName.GenWithStackByArgs(string(pluginID), plugin.Name)
-		return
-	}
-	if strconv.Itoa(int(plugin.Version)) != pVersion {
-		err = errInvalidPluginVersion.GenWithStackByArgs(string(pluginID))
-		return
-	}
-	return
 }
 
 // Shutdown cleanups all plugin resources.
