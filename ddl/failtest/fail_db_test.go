@@ -182,7 +182,7 @@ func (s *testFailDBSuite) TestInitializeOffsetAndState(c *C) {
 }
 
 func (s *testFailDBSuite) TestUpdateHandleFailed(c *C) {
-	gofail.Enable("github.com/pingcap/tidb/ddl/errorUpdateReorgHandle", `return(true)`)
+	gofail.Enable("github.com/pingcap/tidb/ddl/errorUpdateReorgHandle", `1*return(true)`)
 	defer gofail.Disable("github.com/pingcap/tidb/ddl/errorUpdateReorgHandle")
 	tk := testkit.NewTestKit(c, s.store)
 	tk.MustExec("create database if not exists test_handle_failed")
@@ -197,7 +197,7 @@ func (s *testFailDBSuite) TestUpdateHandleFailed(c *C) {
 }
 
 func (s *testFailDBSuite) TestAddIndexFailed(c *C) {
-	gofail.Enable("github.com/pingcap/tidb/ddl/mockAddIndexErr", `return(true)`)
+	gofail.Enable("github.com/pingcap/tidb/ddl/mockAddIndexErr", `1*return(true)`)
 	defer gofail.Disable("github.com/pingcap/tidb/ddl/mockAddIndexErr")
 	tk := testkit.NewTestKit(c, s.store)
 	tk.MustExec("create database if not exists test_add_index_failed")

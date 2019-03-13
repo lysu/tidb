@@ -301,8 +301,6 @@ func (d *ddlCtx) GetTableMaxRowID(startTS uint64, tbl table.PhysicalTable) (maxR
 	return maxRowID, false, nil
 }
 
-var gofailOnceGuard bool
-
 // getTableRange gets the start and end handle of a table (or partition).
 func getTableRange(d *ddlCtx, tbl table.PhysicalTable, snapshotVer uint64, priority int) (startHandle, endHandle int64, err error) {
 	startHandle = math.MinInt64
@@ -364,9 +362,7 @@ func getReorgInfo(d *ddlCtx, t *meta.Meta, job *model.Job, tbl table.Table) (*re
 		log.Infof("[ddl-reorg] job %v get partition %d range [%d %d]", job.ID, pid, start, end)
 
 		// gofail: var errorUpdateReorgHandle bool
-		// if errorUpdateReorgHandle && !gofailOnceGuard {
-		//  // only return error once.
-		//	gofailOnceGuard = true
+		// if errorUpdateReorgHandle {
 		// 	return &info, errors.New("occur an error when update reorg handle.")
 		// }
 		err = t.UpdateDDLReorgHandle(job, start, end, pid)
