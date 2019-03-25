@@ -294,6 +294,18 @@ func (t *tikvHandlerTool) getTableID(dbName, tableName string) (int64, error) {
 	return tableVal.Meta().ID, nil
 }
 
+func (t *tikvHandlerTool) getTable(dbName, tableName string) (*model.TableInfo, error) {
+	schema, err := t.schema()
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	tableVal, err := schema.TableByName(model.NewCIStr(dbName), model.NewCIStr(tableName))
+	if err != nil {
+		return nil, errors.Trace(err)
+	}
+	return tableVal.Meta(), nil
+}
+
 func (t *tikvHandlerTool) schema() (infoschema.InfoSchema, error) {
 	session, err := session.CreateSession(t.store.(kv.Storage))
 	if err != nil {
@@ -1506,11 +1518,17 @@ func (h mvccTxnHandler) handleMvccGetByKey(params map[string]string) (interface{
 		return nil, errors.Trace(err)
 	}
 
-	tableID, err := h.getTableID(params[pDBName], params[pTableName])
+	tb, err := h.getTable(params[pDBName], params[pTableName])
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	return h.getMvccByHandle(tableID, handle)
+
+	resp, err := h.getMvccByHandle(tb.ID, handle)
+	if err != nil {
+		return nil, err
+	}
+
+	return resp, nil
 }
 
 func (h *mvccTxnHandler) handleMvccGetByTxn(params map[string]string) (interface{}, error) {
