@@ -1468,7 +1468,8 @@ func (h mvccTxnHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			data, err = h.handleMvccGetByIdx(params, values)
 		}
 	case opMvccGetByKey:
-		data, err = h.handleMvccGetByKey(params)
+		decode := len(req.URL.Query().Get("decode")) > 0
+		data, err = h.handleMvccGetByKey(params, decode)
 	case opMvccGetByTxn:
 		data, err = h.handleMvccGetByTxn(params)
 	default:
@@ -1512,7 +1513,7 @@ func (h mvccTxnHandler) handleMvccGetByIdx(params map[string]string, values url.
 	return h.getMvccByIdxValue(idx, values, idxCols, handleStr)
 }
 
-func (h mvccTxnHandler) handleMvccGetByKey(params map[string]string) (interface{}, error) {
+func (h mvccTxnHandler) handleMvccGetByKey(params map[string]string, decodeData bool) (interface{}, error) {
 	handle, err := strconv.ParseInt(params[pHandle], 0, 64)
 	if err != nil {
 		return nil, errors.Trace(err)
@@ -1528,7 +1529,50 @@ func (h mvccTxnHandler) handleMvccGetByKey(params map[string]string) (interface{
 		return nil, err
 	}
 
-	return resp, nil
+	colMap := make(map[int64]*types.FieldType, 3)
+	for _, col := range tb.Columns {
+		colMap[col.ID] = &col.FieldType
+	}
+
+	var result interface{} = resp
+	if decodeData && resp.Info != nil {
+		datas := make(map[string][]map[string]string)
+		for _, w := range resp.Info.Writes {
+			if len(w.ShortValue) > 0 {
+				datas[strconv.FormatUint(w.StartTs, 10)] = h.decodeMvccData(w.ShortValue, colMap, tb)
+			}
+		}
+
+		for _, v := range resp.Info.Values {
+			if len(v.Value) > 0 {
+				datas[strconv.FormatUint(v.StartTs, 10)] = h.decodeMvccData(v.Value, colMap, tb)
+			}
+		}
+
+		if len(datas) > 0 {
+			result = map[string]interface{}{
+				"info": resp.Info,
+				"data": datas,
+			}
+		}
+	}
+
+	return result, nil
+}
+
+func (h mvccTxnHandler) decodeMvccData(bs []byte, colMap map[int64]*types.FieldType, tb *model.TableInfo) []map[string]string {
+	rs, _ := tablecodec.DecodeRow(bs, colMap, time.UTC)
+	var record []map[string]string
+	for _, col := range tb.Columns {
+		if c, ok := rs[col.ID]; ok {
+			data := "nil"
+			if !c.IsNull() {
+				data, _ = c.ToString()
+			}
+			record = append(record, map[string]string{col.Name.O: data})
+		}
+	}
+	return record
 }
 
 func (h *mvccTxnHandler) handleMvccGetByTxn(params map[string]string) (interface{}, error) {
