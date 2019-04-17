@@ -63,7 +63,7 @@ token-limit = 0
 [performance]
 [tikv-client]
 commit-timeout="41s"
-max-batch-size=128
+max-batch-size=127
 `)
 
 	c.Assert(err, IsNil)
@@ -76,7 +76,7 @@ max-batch-size=128
 	c.Assert(conf.Binlog.Strategy, Equals, "hash")
 
 	c.Assert(conf.TiKVClient.CommitTimeout, Equals, "41s")
-	c.Assert(conf.TiKVClient.MaxBatchSize, Equals, uint(128))
+	c.Assert(conf.TiKVClient.MaxBatchSize, Equals, uint(127))
 	c.Assert(conf.TokenLimit, Equals, uint(1000))
 	c.Assert(f.Close(), IsNil)
 	c.Assert(os.Remove(configFile), IsNil)

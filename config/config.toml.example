@@ -253,7 +253,7 @@ commit-timeout = "41s"
 max-txn-time-use = 590
 
 # Max batch size in gRPC.
-max-batch-size = 128
+max-batch-size = 127
 # Overload threshold of TiKV.
 overload-threshold = 200
 # Max batch wait time in nanosecond to avoid waiting too long. 0 means disable this feature.
