@@ -35,9 +35,9 @@ const (
 	LabelGCWorker = "gcworker"
 	LabelAnalyze  = "analyze"
 
-	LabelBatchRecvLoop = "batch-recv-loop"
+	LabelBatchRecvLoop     = "batch-recv-loop"
 	LabelBatchDispatchLoop = "batch-dispatch-loop"
-	LabelBatchSendLoop = "batch-send-loop"
+	LabelBatchSendLoop     = "batch-send-loop"
 
 	opSucc   = "ok"
 	opFailed = "err"

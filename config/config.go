@@ -360,7 +360,7 @@ var defaultConf = Config{
 
 		MaxTxnTimeUse: 590,
 
-		MaxBatchSize:      128,
+		MaxBatchSize:      127,
 		OverloadThreshold: 200,
 		MaxBatchWaitTime:  0,
 		BatchWaitSize:     8,
