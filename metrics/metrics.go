@@ -36,6 +36,7 @@ const (
 	LabelAnalyze  = "analyze"
 
 	LabelBatchRecvLoop = "batch-recv-loop"
+	LabelBatchDispatchLoop = "batch-dispatch-loop"
 	LabelBatchSendLoop = "batch-send-loop"
 
 	opSucc   = "ok"

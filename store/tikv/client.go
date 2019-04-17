@@ -114,6 +114,17 @@ func (c *batchCommandsClient) failPendingRequests(err error) {
 }
 
 func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchSendLoop).Inc()
+			logutil.Logger(context.Background()).Error("batchSendLoop",
+				zap.Reflect("r", r),
+				zap.Stack("stack"))
+			logutil.Logger(context.Background()).Info("restart batchSendLoop")
+			go c.batchSendLoop(cfg)
+		}
+	}()
+
 	requestIDs := make([]uint64, 0, cfg.MaxBatchSize)
 	requests := make([]*tikvpb.BatchCommandsRequest_Request, 0, cfg.MaxBatchSize)
 	for entries := range c.sendChan {
@@ -429,7 +440,7 @@ func fetchMorePendingRequests(
 func (a *connArray) batchDispatchLoop(cfg config.TiKVClient) {
 	defer func() {
 		if r := recover(); r != nil {
-			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchSendLoop).Inc()
+			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchDispatchLoop).Inc()
 			logutil.Logger(context.Background()).Error("batchDispatchLoop",
 				zap.Reflect("r", r),
 				zap.Stack("stack"))

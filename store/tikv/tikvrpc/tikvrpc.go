@@ -281,6 +281,9 @@ func FromBatchCommandsResponse(res *tikvpb.BatchCommandsResponse_Response) *Resp
 	case *tikvpb.BatchCommandsResponse_Response_Cleanup:
 		resp.Type = CmdCleanup
 		resp.Cleanup = res.Cleanup
+	case *tikvpb.BatchCommandsResponse_Response_BatchGet:
+		resp.Type = CmdBatchGet
+		resp.BatchGet = res.BatchGet
 	case *tikvpb.BatchCommandsResponse_Response_BatchRollback:
 		resp.Type = CmdBatchRollback
 		resp.BatchRollback = res.BatchRollback
