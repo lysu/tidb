@@ -85,13 +85,18 @@ type connArray struct {
 	tikvTransportLayerLoad uint64
 }
 
+type batchCommandsEntries struct {
+	entries  []*batchCommandsEntry
+	ackCount int
+}
+
 type batchCommandsClient struct {
 	// The target host.
 	target string
 
 	conn                   *grpc.ClientConn
 	client                 tikvpb.Tikv_BatchCommandsClient
-	batched                map[uint64]*batchCommandsEntry
+	batched                map[uint64]*batchCommandsEntries
 	idAlloc                uint64
 	tikvTransportLayerLoad *uint64
 
@@ -108,8 +113,10 @@ func (c *batchCommandsClient) isStopped() bool {
 
 func (c *batchCommandsClient) failPendingRequests(err error) {
 	for id, entry := range c.batched {
-		entry.err = err
-		close(entry.res)
+		for _, e := range entry.entries {
+			e.err = err
+			close(e.res)
+		}
 		delete(c.batched, id)
 	}
 }
@@ -135,11 +142,14 @@ func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
 			requests = append(requests, entry.req)
 		}
 
-		length := len(requests)
-		c.idAlloc += uint64(length)
-		for i := 0; i < length; i++ {
-			requestID := uint64(i) + c.idAlloc - uint64(length)
-			requestIDs = append(requestIDs, requestID)
+		c.idAlloc++
+		if c.idAlloc == (1<<57)-1 {
+			c.idAlloc = 0
+		}
+		batchId := c.idAlloc
+		prefix := batchId << 7
+		for i := uint64(0); i < uint64(len(requests)); i++ {
+			requestIDs = append(requestIDs, prefix|i)
 		}
 
 		request := &tikvpb.BatchCommandsRequest{
@@ -150,9 +160,7 @@ func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
 		// Use the lock to protect the stream client won't be replaced by RecvLoop,
 		// and new added request won't be removed by `failPendingRequests`.
 		c.clientLock.Lock()
-		for i, requestID := range request.RequestIds {
-			c.batched[requestID] = entries[i]
-		}
+		c.batched[batchId] = &batchCommandsEntries{entries: entries}
 		err := c.client.Send(request)
 		c.clientLock.Unlock()
 		if err != nil {
@@ -221,22 +229,38 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 		}
 
 		responses := resp.GetResponses()
-		c.clientLock.Lock()
-		for i, requestID := range resp.GetRequestIds() {
-			entry, ok := c.batched[requestID]
-			if !ok {
-				// There shouldn't be any unknown responses because if the old entries
-				// are cleaned by `failPendingRequests`, the stream must be re-created
-				// so that old responses will be never received.
-				panic("batchRecvLoop receives a unknown response")
+		requestIds := resp.GetRequestIds()
+		var (
+			entries   *batchCommandsEntries
+			lastBatch uint64
+		)
+		for i, requestID := range requestIds {
+			currentBatch := requestID >> 7
+			if entries == nil || lastBatch != currentBatch {
+				c.clientLock.Lock()
+				var ok bool
+				entries, ok = c.batched[currentBatch]
+				c.clientLock.Unlock()
+				if !ok {
+					// There shouldn't be any unknown responses because if the old entries
+					// are cleaned by `failPendingRequests`, the stream must be re-created
+					// so that old responses will be never received.
+					panic("batchRecvLoop receives a unknown response")
+				}
 			}
+			idx := requestID & ((1 << 7) - 1)
+			entry := entries.entries[idx]
 			if atomic.LoadInt32(&entry.canceled) == 0 {
 				// Put the response only if the request is not canceled.
 				entry.res <- responses[i]
 			}
-			delete(c.batched, requestID)
+			entries.ackCount++
+			if entries.ackCount == len(entries.entries) {
+				c.clientLock.Lock()
+				delete(c.batched, currentBatch)
+				c.clientLock.Unlock()
+			}
 		}
-		c.clientLock.Unlock()
 
 		tikvTransportLayerLoad := resp.GetTransportLayerLoad()
 		if tikvTransportLayerLoad > 0.0 && cfg.MaxBatchWaitTime > 0 {
@@ -327,7 +351,7 @@ func (a *connArray) Init(addr string, security config.Security) error {
 				target:                 a.target,
 				conn:                   conn,
 				client:                 streamClient,
-				batched:                make(map[uint64]*batchCommandsEntry),
+				batched:                make(map[uint64]*batchCommandsEntries),
 				idAlloc:                0,
 				tikvTransportLayerLoad: &a.tikvTransportLayerLoad,
 				closed:                 0,
