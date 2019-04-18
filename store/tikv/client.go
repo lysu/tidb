@@ -91,7 +91,7 @@ type batchCommandsClient struct {
 
 	conn                   *grpc.ClientConn
 	client                 tikvpb.Tikv_BatchCommandsClient
-	batched                sync.Map
+	batched                map[uint64]*batchCommandsEntry
 	idAlloc                uint64
 	tikvTransportLayerLoad *uint64
 
@@ -107,14 +107,11 @@ func (c *batchCommandsClient) isStopped() bool {
 }
 
 func (c *batchCommandsClient) failPendingRequests(err error) {
-	c.batched.Range(func(key, value interface{}) bool {
-		id, _ := key.(uint64)
-		entry, _ := value.(*batchCommandsEntry)
+	for id, entry := range c.batched {
 		entry.err = err
 		close(entry.res)
-		c.batched.Delete(id)
-		return true
-	})
+		delete(c.batched, id)
+	}
 }
 
 func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
@@ -154,13 +151,15 @@ func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
 		// and new added request won't be removed by `failPendingRequests`.
 		c.clientLock.Lock()
 		for i, requestID := range request.RequestIds {
-			c.batched.Store(requestID, entries[i])
+			c.batched[requestID] = entries[i]
 		}
 		err := c.client.Send(request)
 		c.clientLock.Unlock()
 		if err != nil {
 			logutil.Logger(context.Background()).Error("batch commands send error", zap.Error(err))
+			c.clientLock.Lock()
 			c.failPendingRequests(err)
+			c.clientLock.Unlock()
 		}
 	}
 }
@@ -222,21 +221,22 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 		}
 
 		responses := resp.GetResponses()
+		c.clientLock.Lock()
 		for i, requestID := range resp.GetRequestIds() {
-			value, ok := c.batched.Load(requestID)
+			entry, ok := c.batched[requestID]
 			if !ok {
 				// There shouldn't be any unknown responses because if the old entries
 				// are cleaned by `failPendingRequests`, the stream must be re-created
 				// so that old responses will be never received.
 				panic("batchRecvLoop receives a unknown response")
 			}
-			entry := value.(*batchCommandsEntry)
 			if atomic.LoadInt32(&entry.canceled) == 0 {
 				// Put the response only if the request is not canceled.
 				entry.res <- responses[i]
 			}
-			c.batched.Delete(requestID)
+			delete(c.batched, requestID)
 		}
+		c.clientLock.Unlock()
 
 		tikvTransportLayerLoad := resp.GetTransportLayerLoad()
 		if tikvTransportLayerLoad > 0.0 && cfg.MaxBatchWaitTime > 0 {
@@ -327,7 +327,7 @@ func (a *connArray) Init(addr string, security config.Security) error {
 				target:                 a.target,
 				conn:                   conn,
 				client:                 streamClient,
-				batched:                sync.Map{},
+				batched:                make(map[uint64]*batchCommandsEntry),
 				idAlloc:                0,
 				tikvTransportLayerLoad: &a.tikvTransportLayerLoad,
 				closed:                 0,
