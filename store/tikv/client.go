@@ -99,6 +99,7 @@ type batchCommandsClient struct {
 	closed int32
 	// clientLock protects client when re-create the streaming.
 	clientLock sync.Mutex
+	sendChan   chan []*batchCommandsEntry
 }
 
 func (c *batchCommandsClient) isStopped() bool {
@@ -114,6 +115,54 @@ func (c *batchCommandsClient) failPendingRequests(err error) {
 		c.batched.Delete(id)
 		return true
 	})
+}
+
+func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchSendLoop).Inc()
+			logutil.Logger(context.Background()).Error("batchSendLoop",
+				zap.Reflect("r", r),
+				zap.Stack("stack"))
+			logutil.Logger(context.Background()).Info("restart batchSendLoop")
+			go c.batchSendLoop(cfg)
+		}
+	}()
+	requestIDs := make([]uint64, 0, cfg.MaxBatchSize)
+	requests := make([]*tikvpb.BatchCommandsRequest_Request, 0, cfg.MaxBatchSize)
+	for entries := range c.sendChan {
+		requestIDs = requestIDs[:0]
+		requests = requests[:0]
+
+		for _, entry := range entries {
+			requests = append(requests, entry.req)
+		}
+
+		length := len(requests)
+		c.idAlloc += uint64(length)
+		for i := 0; i < length; i++ {
+			requestID := uint64(i) + c.idAlloc - uint64(length)
+			requestIDs = append(requestIDs, requestID)
+		}
+
+		request := &tikvpb.BatchCommandsRequest{
+			Requests:   requests,
+			RequestIds: requestIDs,
+		}
+
+		// Use the lock to protect the stream client won't be replaced by RecvLoop,
+		// and new added request won't be removed by `failPendingRequests`.
+		c.clientLock.Lock()
+		for i, requestID := range request.RequestIds {
+			c.batched.Store(requestID, entries[i])
+		}
+		err := c.client.Send(request)
+		c.clientLock.Unlock()
+		if err != nil {
+			logutil.Logger(context.Background()).Error("batch commands send error", zap.Error(err))
+			c.failPendingRequests(err)
+		}
+	}
 }
 
 func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
@@ -144,10 +193,9 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 					zap.Error(err),
 				)
 
-				// Hold the lock to forbid batchSendLoop using the old client.
+				// Hold the lock to forbid batchDispatchLoop using the old client.
 				c.clientLock.Lock()
 				c.failPendingRequests(err) // fail all pending requests.
-
 				// Re-establish a application layer stream. TCP layer is handled by gRPC.
 				tikvClient := tikvpb.NewTikvClient(c.conn)
 				streamClient, err := tikvClient.BatchCommands(context.TODO())
@@ -284,13 +332,15 @@ func (a *connArray) Init(addr string, security config.Security) error {
 				tikvTransportLayerLoad: &a.tikvTransportLayerLoad,
 				closed:                 0,
 			}
+			batchClient.sendChan = make(chan []*batchCommandsEntry, 1)
 			a.batchCommandsClients = append(a.batchCommandsClients, batchClient)
+			go batchClient.batchSendLoop(cfg.TiKVClient)
 			go batchClient.batchRecvLoop(cfg.TiKVClient)
 		}
 	}
 	go tikvrpc.CheckStreamTimeoutLoop(a.streamTimeout)
 	if allowBatch {
-		go a.batchSendLoop(cfg.TiKVClient)
+		go a.batchDispatchLoop(cfg.TiKVClient)
 	}
 
 	return nil
@@ -305,7 +355,9 @@ func (a *connArray) Close() {
 	// Close all batchRecvLoop.
 	for _, c := range a.batchCommandsClients {
 		// After connections are closed, `batchRecvLoop`s will check the flag.
-		atomic.StoreInt32(&c.closed, 1)
+		if atomic.CompareAndSwapInt32(&c.closed, 0, 1) {
+			close(c.sendChan)
+		}
 	}
 	close(a.batchCommandsCh)
 
@@ -333,7 +385,6 @@ func fetchAllPendingRequests(
 	ch chan *batchCommandsEntry,
 	maxBatchSize int,
 	entries *[]*batchCommandsEntry,
-	requests *[]*tikvpb.BatchCommandsRequest_Request,
 ) {
 	// Block on the first element.
 	headEntry := <-ch
@@ -341,7 +392,6 @@ func fetchAllPendingRequests(
 		return
 	}
 	*entries = append(*entries, headEntry)
-	*requests = append(*requests, headEntry.req)
 
 	// This loop is for trying best to collect more requests.
 	for len(*entries) < maxBatchSize {
@@ -351,7 +401,6 @@ func fetchAllPendingRequests(
 				return
 			}
 			*entries = append(*entries, entry)
-			*requests = append(*requests, entry.req)
 		default:
 			return
 		}
@@ -365,7 +414,6 @@ func fetchMorePendingRequests(
 	batchWaitSize int,
 	maxWaitTime time.Duration,
 	entries *[]*batchCommandsEntry,
-	requests *[]*tikvpb.BatchCommandsRequest_Request,
 ) {
 	waitStart := time.Now()
 
@@ -378,7 +426,6 @@ func fetchMorePendingRequests(
 				return
 			}
 			*entries = append(*entries, entry)
-			*requests = append(*requests, entry.req)
 		case waitEnd := <-after.C:
 			metrics.TiKVBatchWaitDuration.Observe(float64(waitEnd.Sub(waitStart)))
 			return
@@ -396,7 +443,6 @@ func fetchMorePendingRequests(
 				return
 			}
 			*entries = append(*entries, entry)
-			*requests = append(*requests, entry.req)
 		default:
 			metrics.TiKVBatchWaitDuration.Observe(float64(time.Since(waitStart)))
 			return
@@ -404,34 +450,29 @@ func fetchMorePendingRequests(
 	}
 }
 
-func (a *connArray) batchSendLoop(cfg config.TiKVClient) {
+func (a *connArray) batchDispatchLoop(cfg config.TiKVClient) {
 	defer func() {
 		if r := recover(); r != nil {
-			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchSendLoop).Inc()
-			logutil.Logger(context.Background()).Error("batchSendLoop",
+			metrics.PanicCounter.WithLabelValues(metrics.LabelBatchDispatchLoop).Inc()
+			logutil.Logger(context.Background()).Error("batchDispatchLoop",
 				zap.Reflect("r", r),
 				zap.Stack("stack"))
-			logutil.Logger(context.Background()).Info("restart batchSendLoop")
-			go a.batchSendLoop(cfg)
+			logutil.Logger(context.Background()).Info("restart batchDispatchLoop")
+			go a.batchDispatchLoop(cfg)
 		}
 	}()
-
-	entries := make([]*batchCommandsEntry, 0, cfg.MaxBatchSize)
-	requests := make([]*tikvpb.BatchCommandsRequest_Request, 0, cfg.MaxBatchSize)
-	requestIDs := make([]uint64, 0, cfg.MaxBatchSize)
 
 	var bestBatchWaitSize = cfg.BatchWaitSize
 	for {
 		// Choose a connection by round-robbin.
-		next := atomic.AddUint32(&a.index, 1) % uint32(len(a.v))
+		a.index++
+		next := a.index % uint32(len(a.v))
 		batchCommandsClient := a.batchCommandsClients[next]
 
-		entries = entries[:0]
-		requests = requests[:0]
-		requestIDs = requestIDs[:0]
+		entries := make([]*batchCommandsEntry, 0, cfg.MaxBatchSize)
 
 		metrics.TiKVPendingBatchRequests.Set(float64(len(a.batchCommandsCh)))
-		fetchAllPendingRequests(a.batchCommandsCh, int(cfg.MaxBatchSize), &entries, &requests)
+		fetchAllPendingRequests(a.batchCommandsCh, int(cfg.MaxBatchSize), &entries)
 
 		if len(entries) < int(cfg.MaxBatchSize) && cfg.MaxBatchWaitTime > 0 {
 			tikvTransportLayerLoad := atomic.LoadUint64(batchCommandsClient.tikvTransportLayerLoad)
@@ -439,11 +480,11 @@ func (a *connArray) batchSendLoop(cfg config.TiKVClient) {
 			if uint(tikvTransportLayerLoad) >= cfg.OverloadThreshold {
 				fetchMorePendingRequests(
 					a.batchCommandsCh, int(cfg.MaxBatchSize), int(bestBatchWaitSize),
-					cfg.MaxBatchWaitTime, &entries, &requests,
+					cfg.MaxBatchWaitTime, &entries,
 				)
 			}
 		}
-		length := len(requests)
+		length := len(entries)
 		if uint(length) == 0 {
 			// The batch command channel is closed.
 			return
@@ -454,32 +495,14 @@ func (a *connArray) batchSendLoop(cfg config.TiKVClient) {
 			bestBatchWaitSize += 1
 		}
 
-		maxBatchID := atomic.AddUint64(&batchCommandsClient.idAlloc, uint64(length))
-		for i := 0; i < length; i++ {
-			requestID := uint64(i) + maxBatchID - uint64(length)
-			requestIDs = append(requestIDs, requestID)
-		}
-
-		request := &tikvpb.BatchCommandsRequest{
-			Requests:   requests,
-			RequestIds: requestIDs,
-		}
-
-		// Use the lock to protect the stream client won't be replaced by RecvLoop,
-		// and new added request won't be removed by `failPendingRequests`.
-		batchCommandsClient.clientLock.Lock()
-		for i, requestID := range request.RequestIds {
-			batchCommandsClient.batched.Store(requestID, entries[i])
-		}
-		err := batchCommandsClient.client.Send(request)
-		batchCommandsClient.clientLock.Unlock()
-		if err != nil {
-			logutil.Logger(context.Background()).Error(
-				"batch commands send error",
-				zap.String("target", a.target),
-				zap.Error(err),
-			)
-			batchCommandsClient.failPendingRequests(err)
+	retrySend:
+		select {
+		case batchCommandsClient.sendChan <- entries:
+		default:
+			a.index++
+			next = a.index % uint32(len(a.v))
+			batchCommandsClient = a.batchCommandsClients[next]
+			goto retrySend
 		}
 	}
 }
