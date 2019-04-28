@@ -147,7 +147,10 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 					c.client = streamClient
 					break
 				}
-				logutil.Logger(context.Background()).Error("batchRecvLoop re-create streaming fail", zap.Error(err))
+				logutil.Logger(context.Background()).Error("batchRecvLoop re-create streaming fail", zap.String("target", c.conn.Target()), zap.Error(err))
+				if c.isStopped() {
+					return
+				}
 				// TODO: Use a more smart backoff strategy.
 				time.Sleep(time.Second)
 			}
