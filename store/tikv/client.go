@@ -164,7 +164,9 @@ func (c *batchCommandsClient) batchSendLoop(cfg config.TiKVClient) {
 		err := c.client.Send(request)
 		c.clientLock.Unlock()
 		if err != nil {
-			logutil.Logger(context.Background()).Error("batch commands send error", zap.Error(err))
+			logutil.Logger(context.Background()).Error("batch commands send error",
+				zap.String("target", c.target),
+				zap.Error(err))
 			c.clientLock.Lock()
 			c.failPendingRequests(err)
 			c.clientLock.Unlock()
