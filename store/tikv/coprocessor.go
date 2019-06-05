@@ -117,6 +117,7 @@ func (c *CopClient) Send(ctx context.Context, req *kv.Request, vars *kv.Variable
 
 // copTask contains a related Region and KeyRange for a kv.Request.
 type copTask struct {
+	store  uint64
 	region RegionVerID
 	ranges *copRanges
 
@@ -252,7 +253,7 @@ func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bo
 	}
 
 	var tasks []*copTask
-	appendTask := func(region RegionVerID, ranges *copRanges) {
+	appendTask := func(region RegionVerID, store uint64, ranges *copRanges) {
 		// TiKV will return gRPC error if the message is too large. So we need to limit the length of the ranges slice
 		// to make sure the message can be sent successfully.
 		rLen := ranges.len()
@@ -260,6 +261,7 @@ func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bo
 			nextI := mathutil.Min(i+rangesPerTask, rLen)
 			tasks = append(tasks, &copTask{
 				region:   region,
+				store:    store,
 				ranges:   ranges.slice(i, nextI),
 				respChan: make(chan *copResponse, 1),
 				cmdType:  cmdType,
@@ -286,7 +288,7 @@ func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, desc bo
 	return tasks, nil
 }
 
-func splitRanges(bo *Backoffer, cache *RegionCache, ranges *copRanges, fn func(region RegionVerID, ranges *copRanges)) error {
+func splitRanges(bo *Backoffer, cache *RegionCache, ranges *copRanges, fn func(region RegionVerID, store uint64, ranges *copRanges)) error {
 	for ranges.len() > 0 {
 		loc, err := cache.LocateKey(bo, ranges.at(0).StartKey)
 		if err != nil {
@@ -303,7 +305,7 @@ func splitRanges(bo *Backoffer, cache *RegionCache, ranges *copRanges, fn func(r
 		}
 		// All rest ranges belong to the same region.
 		if i == ranges.len() {
-			fn(loc.Region, ranges)
+			fn(loc.Region, loc.StoreID, ranges)
 			break
 		}
 
@@ -315,7 +317,7 @@ func splitRanges(bo *Backoffer, cache *RegionCache, ranges *copRanges, fn func(r
 				StartKey: r.StartKey,
 				EndKey:   loc.EndKey,
 			}
-			fn(loc.Region, taskRanges)
+			fn(loc.Region, loc.StoreID, taskRanges)
 
 			ranges = ranges.slice(i+1, ranges.len())
 			ranges.first = &kv.KeyRange{
@@ -325,7 +327,7 @@ func splitRanges(bo *Backoffer, cache *RegionCache, ranges *copRanges, fn func(r
 		} else {
 			// rs[i] is not in the region.
 			taskRanges := ranges.slice(0, i)
-			fn(loc.Region, taskRanges)
+			fn(loc.Region, loc.StoreID, taskRanges)
 			ranges = ranges.slice(i, ranges.len())
 		}
 	}
@@ -338,7 +340,7 @@ func SplitRegionRanges(bo *Backoffer, cache *RegionCache, keyRanges []kv.KeyRang
 	ranges := copRanges{mid: keyRanges}
 
 	var ret []kv.KeyRange
-	appendRange := func(region RegionVerID, ranges *copRanges) {
+	appendRange := func(region RegionVerID, store uint64, ranges *copRanges) {
 		for i := 0; i < ranges.len(); i++ {
 			ret = append(ret, ranges.at(i))
 		}

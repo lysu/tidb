@@ -284,6 +284,7 @@ type KeyLocation struct {
 	Region   RegionVerID
 	StartKey []byte
 	EndKey   []byte
+	StoreID  uint64
 }
 
 // Contains checks if key is in [StartKey, EndKey).
@@ -298,10 +299,12 @@ func (c *RegionCache) LocateKey(bo *Backoffer, key []byte) (*KeyLocation, error)
 	if err != nil {
 		return nil, err
 	}
+	rs := r.getStore()
 	return &KeyLocation{
 		Region:   r.VerID(),
 		StartKey: r.StartKey(),
 		EndKey:   r.EndKey(),
+		StoreID:  rs.stores[rs.workStoreIdx].storeID,
 	}, nil
 }
 
@@ -323,10 +326,12 @@ func (c *RegionCache) LocateEndKey(bo *Backoffer, key []byte) (*KeyLocation, err
 	if err != nil {
 		return nil, err
 	}
+	rs := r.getStore()
 	return &KeyLocation{
 		Region:   r.VerID(),
 		StartKey: r.StartKey(),
 		EndKey:   r.EndKey(),
+		StoreID:  rs.stores[rs.workStoreIdx].storeID,
 	}, nil
 }
 
@@ -411,10 +416,12 @@ func (c *RegionCache) LocateRegionByID(bo *Backoffer, regionID uint64) (*KeyLoca
 	c.mu.Lock()
 	c.insertRegionToCache(r)
 	c.mu.Unlock()
+	rs := r.getStore()
 	return &KeyLocation{
 		Region:   r.VerID(),
 		StartKey: r.StartKey(),
 		EndKey:   r.EndKey(),
+		StoreID:  rs.stores[rs.workStoreIdx].storeID,
 	}, nil
 }
 
