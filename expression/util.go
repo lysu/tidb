@@ -554,13 +554,10 @@ func GetParamExpression(ctx sessionctx.Context, v *driver.ParamMarkerExpr) (Expr
 	types.DefaultParamTypeForValue(v.GetValue(), tp)
 	value := &Constant{Value: v.Datum, RetType: tp}
 	if useCache {
-		f, err := NewFunctionBase(ctx, ast.GetParam, &v.Type,
-			DatumToConstant(types.NewIntDatum(int64(v.Order)), mysql.TypeLonglong))
-		if err != nil {
-			return nil, err
+		value.DeferredValue = &DeferredValue{
+			order: v.Order,
+			ctx:   ctx,
 		}
-		f.GetType().Tp = v.Type.Tp
-		value.DeferredExpr = f
 	}
 	return value, nil
 }
@@ -650,9 +647,8 @@ func isMutableEffectsExpr(expr Expression) bool {
 		}
 	case *Column:
 	case *Constant:
-		if x.DeferredExpr != nil {
-			return isMutableEffectsExpr(x.DeferredExpr)
-		}
+		// constant always be immutable, even if it's a defer value
+		// prepare stmt's params must be a constant and never be a function.
 	}
 	return false
 }
@@ -681,13 +677,8 @@ func GetUint64FromConstant(expr Expression) (uint64, bool, bool) {
 		return 0, false, false
 	}
 	dt := con.Value
-	if con.DeferredExpr != nil {
-		var err error
-		dt, err = con.DeferredExpr.Eval(chunk.Row{})
-		if err != nil {
-			logutil.Logger(context.Background()).Warn("eval deferred expr failed", zap.Error(err))
-			return 0, false, false
-		}
+	if con.DeferredValue != nil {
+		dt := con.DeferredValue.Value()
 	}
 	switch dt.Kind() {
 	case types.KindNull:
