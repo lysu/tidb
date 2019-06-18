@@ -15,8 +15,10 @@ package tikv
 
 import (
 	"context"
-
+	"fmt"
 	. "github.com/pingcap/check"
+	"github.com/pingcap/kvproto/pkg/coprocessor"
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/store/mockstore/mocktikv"
 )
@@ -88,6 +90,45 @@ func (s *testCoprocessorSuite) TestBuildTasks(c *C) {
 	c.Assert(tasks, HasLen, 2)
 	s.taskEqual(c, tasks[0], regionIDs[1], "h", "k", "m", "n")
 	s.taskEqual(c, tasks[1], regionIDs[2], "n", "p")
+}
+
+func (s *testCoprocessorSuite) TestBuildRangeNotTooBigTask(c *C) {
+	cluster := mocktikv.NewCluster()
+	_, _, _ = mocktikv.BootstrapWithSingleStore(cluster)
+	pdCli := &codecPDClient{mocktikv.NewPDClient(cluster)}
+	cache := NewRegionCache(pdCli)
+	defer cache.Close()
+
+	bo := NewBackoffer(context.Background(), 3000)
+
+	var ranges []kv.KeyRange
+	for i := 0; i < 50000; i++ {
+		ranges = append(ranges, kv.KeyRange{
+			StartKey: []byte{116, 128, 0, 0, 0, 0, 0, 0, 48, 95, 105, 128, 0, 0, 0, 0, 0, 0, 1, 3, 128, 0, 0, 0, 0, 1, 0, 4, 3, 128, 1, 4, 0, 0, 0, 0, 3},
+			EndKey:   []byte{116, 128, 0, 0, 0, 0, 0, 0, 48, 95, 105, 128, 0, 0, 0, 0, 0, 0, 1, 3, 128, 0, 0, 1, 0, 0, 2, 4, 3, 128, 1, 4, 0, 0, 0, 0, 5},
+		})
+	}
+
+	tasks, err := buildCopTasks(bo, cache, &copRanges{mid: ranges}, false, false)
+	c.Assert(err, IsNil)
+	//c.Assert(tasks, HasLen, 2)
+
+	r := &coprocessor.Request{
+		Tp:     1,
+		Data:   make([]byte, 102),
+		Ranges: tasks[0].ranges.toPBRanges(),
+		Context: &kvrpcpb.Context{
+			IsolationLevel: kvrpcpb.IsolationLevel_SI,
+			Priority:       1,
+			NotFillCache:   true,
+			HandleTime:     true,
+			ScanDetail:     true,
+		},
+	}
+
+	fmt.Println(r.Size(), MaxSendMsgSize)
+	x, _ := r.Marshal()
+	fmt.Println(len(x))
 }
 
 func (s *testCoprocessorSuite) TestSplitRegionRanges(c *C) {
