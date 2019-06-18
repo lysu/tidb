@@ -586,6 +586,13 @@ func (worker *copIteratorWorker) handleTask(bo *Backoffer, task *copTask, respCh
 	}()
 	remainTasks := []*copTask{task}
 	for len(remainTasks) > 0 {
+		failpoint.Inject("copHandleFail", func(v failpoint.Value) {
+			if beFail := v.(bool); beFail {
+				resp := &copResponse{err: errors.New("some error")}
+				worker.sendToRespCh(resp, respCh, true)
+				failpoint.Return()
+			}
+		})
 		tasks, err := worker.handleTaskOnce(bo, remainTasks[0], respCh)
 		if err != nil {
 			resp := &copResponse{err: errors.Trace(err)}
