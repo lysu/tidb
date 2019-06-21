@@ -302,7 +302,7 @@ func ColDescFieldNames(full bool) []string {
 
 // CheckOnce checks if there are duplicated column names in cols.
 func CheckOnce(cols []*Column) error {
-	m := map[string]struct{}{}
+	m := make(map[string]struct{}, len(cols))
 	for _, col := range cols {
 		name := col.Name
 		_, ok := m[name.L]

@@ -1460,6 +1460,7 @@ func (b *PlanBuilder) buildSetValuesOfInsert(insert *ast.InsertStmt, insertPlan 
 		}
 	}
 
+	insertPlan.SetList = make([]*expression.Assignment, 0, len(insert.Setlist))
 	for i, assign := range insert.Setlist {
 		expr, _, err := b.rewriteWithPreprocess(assign.Expr, mockTablePlan, nil, nil, true, checkRefColumn)
 		if err != nil {
@@ -1496,6 +1497,7 @@ func (b *PlanBuilder) buildValuesListOfInsert(insert *ast.InsertStmt, insertPlan
 	}
 
 	totalTableCols := insertPlan.Table.Cols()
+	insertPlan.Lists = make([][]expression.Expression, 0, len(insert.Lists))
 	for i, valuesItem := range insert.Lists {
 		// The length of all the value_list should be the same.
 		// "insert into t values (), ()" is valid.
