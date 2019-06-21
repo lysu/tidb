@@ -1313,7 +1313,7 @@ func (b *PlanBuilder) buildInsert(insert *ast.InsertStmt) (Plan, error) {
 
 	var authErr error
 	if b.ctx.GetSessionVars().User != nil {
-		authErr = ErrTableaccessDenied.GenWithStackByArgs("INSERT", b.ctx.GetSessionVars().User.Hostname,
+		authErr = ErrTableaccessDenied.FastGenByArgs("INSERT", b.ctx.GetSessionVars().User.Hostname,
 			b.ctx.GetSessionVars().User.Username, tableInfo.Name.L)
 	}
 
