@@ -84,7 +84,7 @@ type connArray struct {
 	tikvTransportLayerLoad uint64
 
 	// Notify rpcClient to check the idle flag
-	idleNotify *uint32
+	idleNotify chan struct{}
 	idle       bool
 	idleDetect *time.Timer
 }
@@ -201,7 +201,7 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 	}
 }
 
-func newConnArray(maxSize uint, addr string, security config.Security, idleNotify *uint32) (*connArray, error) {
+func newConnArray(maxSize uint, addr string, security config.Security, idleNotify chan struct{}) (*connArray, error) {
 	cfg := config.GetGlobalConfig()
 
 	a := &connArray{
@@ -358,7 +358,10 @@ func (a *connArray) fetchAllPendingRequests(
 	case <-a.idleDetect.C:
 		a.idleDetect.Reset(idleTimeout)
 		a.idle = true
-		atomic.CompareAndSwapUint32(a.idleNotify, 0, 1)
+		select {
+		case a.idleNotify <- struct{}{}:
+		default:
+		}
 		// This connArray to be recycled
 		return
 	}
@@ -471,6 +474,7 @@ func (a *connArray) batchSendLoop(cfg config.TiKVClient) {
 		length := len(requests)
 		if uint(length) == 0 {
 			// The batch command channel is closed.
+			logutil.BgLogger().Warn("batchSendLoop exit", zap.String("target", a.target))
 			return
 		} else if uint(length) < bestBatchWaitSize && bestBatchWaitSize > 1 {
 			// Waits too long to collect requests, reduce the target batch size.
@@ -542,13 +546,14 @@ type rpcClient struct {
 
 	// Implement background cleanup.
 	// Periodically check whether there is any connection that is idle and then close and remove these idle connections.
-	idleNotify uint32
+	idleNotify chan struct{}
 }
 
 func newRPCClient(security config.Security) *rpcClient {
 	return &rpcClient{
-		conns:    make(map[string]*connArray),
-		security: security,
+		conns:      make(map[string]*connArray),
+		security:   security,
+		idleNotify: make(chan struct{}, 1),
 	}
 }
 
@@ -577,7 +582,7 @@ func (c *rpcClient) createConnArray(addr string) (*connArray, error) {
 	if !ok {
 		var err error
 		connCount := config.GetGlobalConfig().TiKVClient.GrpcConnectionCount
-		array, err = newConnArray(connCount, addr, c.security, &c.idleNotify)
+		array, err = newConnArray(connCount, addr, c.security, c.idleNotify)
 		if err != nil {
 			return nil, err
 		}
@@ -644,8 +649,10 @@ func (c *rpcClient) SendRequest(ctx context.Context, addr string, req *tikvrpc.R
 		metrics.TiKVSendReqHistogram.WithLabelValues(reqType, storeID).Observe(time.Since(start).Seconds())
 	}()
 
-	if atomic.CompareAndSwapUint32(&c.idleNotify, 1, 0) {
+	select {
+	case <-c.idleNotify:
 		c.recycleIdleConnArray()
+	default:
 	}
 
 	connArray, err := c.getConnArray(addr)
