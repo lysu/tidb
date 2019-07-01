@@ -16,6 +16,7 @@ package tikv
 
 import (
 	"context"
+	"github.com/pingcap/failpoint"
 	"io"
 	"math"
 	"strconv"
@@ -135,6 +136,11 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 	for {
 		// When `conn.Close()` is called, `client.Recv()` will return an error.
 		resp, err := c.client.Recv()
+		failpoint.Inject("gotErrorInRecvLoop", func(val failpoint.Value) {
+			if val.(bool) {
+				err = errors.New("some error")
+			}
+		})
 		if err != nil {
 			now := time.Now()
 			for { // try to re-create the streaming in the loop.
@@ -149,6 +155,11 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient) {
 
 				// Hold the lock to forbid batchSendLoop using the old client.
 				c.clientLock.Lock()
+				failpoint.Inject("panicInRecvLoop", func(val failpoint.Value) {
+					if val.(bool) {
+						panic("panic in fail pending request")
+					}
+				})
 				c.failPendingRequests(err) // fail all pending requests.
 
 				// Re-establish a application layer stream. TCP layer is handled by gRPC.
