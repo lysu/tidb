@@ -241,7 +241,7 @@ func (lr *LockResolver) BatchResolveLocks(bo *Backoffer, locks []*Lock, loc Regi
 		return false, nil
 	}
 
-	cmdResp := resp.ResolveLock
+	cmdResp := resp.ResolveLock()
 	if cmdResp == nil {
 		return false, errors.Trace(ErrBodyMissing)
 	}
@@ -361,7 +361,7 @@ func (lr *LockResolver) getTxnStatus(bo *Backoffer, txnID uint64, primary []byte
 			}
 			continue
 		}
-		cmdResp := resp.Cleanup
+		cmdResp := resp.Cleanup()
 		if cmdResp == nil {
 			return status, errors.Trace(ErrBodyMissing)
 		}
@@ -420,7 +420,7 @@ func (lr *LockResolver) resolveLock(bo *Backoffer, l *Lock, status TxnStatus, cl
 			}
 			continue
 		}
-		cmdResp := resp.ResolveLock
+		cmdResp := resp.ResolveLock()
 		if cmdResp == nil {
 			return errors.Trace(ErrBodyMissing)
 		}

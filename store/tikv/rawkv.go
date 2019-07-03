@@ -110,7 +110,7 @@ func (c *RawKVClient) Get(key []byte) ([]byte, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	cmdResp := resp.RawGet
+	cmdResp := resp.RawGet()
 	if cmdResp == nil {
 		return nil, errors.Trace(ErrBodyMissing)
 	}
@@ -136,7 +136,7 @@ func (c *RawKVClient) BatchGet(keys [][]byte) ([][]byte, error) {
 		return nil, errors.Trace(err)
 	}
 
-	cmdResp := resp.RawBatchGet
+	cmdResp := resp.RawBatchGet()
 	if cmdResp == nil {
 		return nil, errors.Trace(ErrBodyMissing)
 	}
@@ -172,7 +172,7 @@ func (c *RawKVClient) Put(key, value []byte) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	cmdResp := resp.RawPut
+	cmdResp := resp.RawPut()
 	if cmdResp == nil {
 		return errors.Trace(ErrBodyMissing)
 	}
@@ -214,7 +214,7 @@ func (c *RawKVClient) Delete(key []byte) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	cmdResp := resp.RawDelete
+	cmdResp := resp.RawDelete()
 	if cmdResp == nil {
 		return errors.Trace(ErrBodyMissing)
 	}
@@ -236,7 +236,7 @@ func (c *RawKVClient) BatchDelete(keys [][]byte) error {
 	if err != nil {
 		return errors.Trace(err)
 	}
-	cmdResp := resp.RawBatchDelete
+	cmdResp := resp.RawBatchDelete()
 	if cmdResp == nil {
 		return errors.Trace(ErrBodyMissing)
 	}
@@ -266,7 +266,7 @@ func (c *RawKVClient) DeleteRange(startKey []byte, endKey []byte) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
-		cmdResp := resp.RawDeleteRange
+		cmdResp := resp.RawDeleteRange()
 		if cmdResp == nil {
 			return errors.Trace(ErrBodyMissing)
 		}
@@ -302,7 +302,7 @@ func (c *RawKVClient) Scan(startKey, endKey []byte, limit int) (keys [][]byte, v
 		if err != nil {
 			return nil, nil, errors.Trace(err)
 		}
-		cmdResp := resp.RawScan
+		cmdResp := resp.RawScan()
 		if cmdResp == nil {
 			return nil, nil, errors.Trace(ErrBodyMissing)
 		}
@@ -346,7 +346,7 @@ func (c *RawKVClient) ReverseScan(startKey, endKey []byte, limit int) (keys [][]
 		if err != nil {
 			return nil, nil, errors.Trace(err)
 		}
-		cmdResp := resp.RawScan
+		cmdResp := resp.RawScan()
 		if cmdResp == nil {
 			return nil, nil, errors.Trace(ErrBodyMissing)
 		}
@@ -420,9 +420,9 @@ func (c *RawKVClient) sendBatchReq(bo *Backoffer, keys [][]byte, cmdType tikvrpc
 	var resp *tikvrpc.Response
 	switch cmdType {
 	case tikvrpc.CmdRawBatchGet:
-		resp = &tikvrpc.Response{Type: tikvrpc.CmdRawBatchGet, RawBatchGet: &kvrpcpb.RawBatchGetResponse{}}
+		resp = &tikvrpc.Response{Type: tikvrpc.CmdRawBatchGet, Resp: unsafe.Pointer(&kvrpcpb.RawBatchGetResponse{})}
 	case tikvrpc.CmdRawBatchDelete:
-		resp = &tikvrpc.Response{Type: tikvrpc.CmdRawBatchDelete, RawBatchDelete: &kvrpcpb.RawBatchDeleteResponse{}}
+		resp = &tikvrpc.Response{Type: tikvrpc.CmdRawBatchDelete, Resp: unsafe.Pointer(&kvrpcpb.RawBatchDeleteResponse{})}
 	}
 	for i := 0; i < len(batches); i++ {
 		singleResp, ok := <-ches
@@ -433,8 +433,8 @@ func (c *RawKVClient) sendBatchReq(bo *Backoffer, keys [][]byte, cmdType tikvrpc
 					firstError = singleResp.err
 				}
 			} else if cmdType == tikvrpc.CmdRawBatchGet {
-				cmdResp := singleResp.resp.RawBatchGet
-				resp.RawBatchGet.Pairs = append(resp.RawBatchGet.Pairs, cmdResp.Pairs...)
+				cmdResp := singleResp.resp.RawBatchGet()
+				resp.RawBatchGet().Pairs = append(resp.RawBatchGet().Pairs, cmdResp.Pairs...)
 			}
 		}
 	}
@@ -484,7 +484,7 @@ func (c *RawKVClient) doBatchReq(bo *Backoffer, batch batch, cmdType tikvrpc.Cmd
 	case tikvrpc.CmdRawBatchGet:
 		batchResp.resp = resp
 	case tikvrpc.CmdRawBatchDelete:
-		cmdResp := resp.RawBatchDelete
+		cmdResp := resp.RawBatchDelete()
 		if cmdResp == nil {
 			batchResp.err = errors.Trace(ErrBodyMissing)
 			return batchResp
@@ -643,7 +643,7 @@ func (c *RawKVClient) doBatchPut(bo *Backoffer, batch batch) error {
 		return c.sendBatchPut(bo, batch.keys, batch.values)
 	}
 
-	cmdResp := resp.RawBatchPut
+	cmdResp := resp.RawBatchPut()
 	if cmdResp == nil {
 		return errors.Trace(ErrBodyMissing)
 	}
