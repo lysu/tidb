@@ -20,7 +20,24 @@ import (
 	plannercore "github.com/pingcap/tidb/planner/core"
 	"github.com/pingcap/tidb/privilege"
 	"github.com/pingcap/tidb/sessionctx"
+	"github.com/pingcap/tidb/types"
 )
+
+func OptimizePrepare(ctx sessionctx.Context, id uint32, args []types.Datum, is infoschema.InfoSchema) (plannercore.Plan, error) {
+	ctx.GetSessionVars().PlanID = 0
+	ctx.GetSessionVars().PlanColumnID = 0
+
+	execPlan := &plannercore.Execute{ExecID: id}
+	if args != nil {
+		execPlan.PrepareParams = args
+	}
+
+	err := execPlan.OptimizePreparedPlan(ctx, is)
+	if err != nil {
+		return nil, err
+	}
+	return execPlan, nil
+}
 
 // Optimize does optimization and creates a Plan.
 // The node must be prepared first.

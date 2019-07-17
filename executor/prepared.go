@@ -266,14 +266,12 @@ func (e *DeallocateExec) Next(ctx context.Context, req *chunk.Chunk) error {
 }
 
 // CompileExecutePreparedStmt compiles a session Execute command to a stmt.Statement.
-func CompileExecutePreparedStmt(ctx sessionctx.Context, ID uint32, args []types.Datum) (sqlexec.Statement, error) {
-	execStmt := &ast.ExecuteStmt{ExecID: ID}
+func CompileExecutePreparedStmt(ctx sessionctx.Context, id uint32, args []types.Datum) (sqlexec.Statement, error) {
 	if err := ResetContextOfStmt(ctx, execStmt); err != nil {
 		return nil, err
 	}
-	execStmt.BinaryArgs = args
 	is := GetInfoSchema(ctx)
-	execPlan, err := planner.Optimize(ctx, execStmt, is)
+	execPlan, err := planner.OptimizePrepare(ctx, id, args, is)
 	if err != nil {
 		return nil, err
 	}
@@ -281,8 +279,8 @@ func CompileExecutePreparedStmt(ctx sessionctx.Context, ID uint32, args []types.
 	stmt := &ExecStmt{
 		InfoSchema: is,
 		Plan:       execPlan,
-		StmtNode:   execStmt,
 		Ctx:        ctx,
+		StmtNode:   nil,
 	}
 	if prepared, ok := ctx.GetSessionVars().PreparedStmts[ID]; ok {
 		stmt.Text = prepared.Stmt.Text()

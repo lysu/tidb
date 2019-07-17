@@ -51,3 +51,8 @@ func SetAffinity(cpus []int) error {
 	}
 	return unix.SchedSetaffinity(unix.Getpid(), &cpuSet)
 }
+
+// SetMemoryPolicy sets memory policy for current process.
+func SetMemoryPolicy() {
+
+}
