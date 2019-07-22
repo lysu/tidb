@@ -588,6 +588,7 @@ func (worker *copIteratorWorker) handleTask(bo *Backoffer, task *copTask, respCh
 	}()
 	remainTasks := []*copTask{task}
 	for len(remainTasks) > 0 {
+		atomic.AddInt32(&bo.noOfTask, 1)
 		tasks, err := worker.handleTaskOnce(bo, remainTasks[0], respCh)
 		if err != nil {
 			resp := &copResponse{err: errors.Trace(err)}
@@ -652,10 +653,10 @@ const (
 
 func (worker *copIteratorWorker) logTimeCopTask(costTime time.Duration, task *copTask, bo *Backoffer, resp *tikvrpc.Response) {
 	logStr := fmt.Sprintf("[TIME_COP_PROCESS] resp_time:%s txnStartTS:%d region_id:%d store_addr:%s", costTime, worker.req.StartTs, task.region.id, task.storeAddr)
-	if bo.totalSleep > minLogBackoffTime {
-		backoffTypes := strings.Replace(fmt.Sprintf("%v", bo.types), " ", ",", -1)
-		logStr += fmt.Sprintf(" backoff_ms:%d backoff_types:%s", bo.totalSleep, backoffTypes)
-	}
+	//if bo.totalSleep > minLogBackoffTime {
+	backoffTypes := strings.Replace(fmt.Sprintf("%v", bo.types), " ", ",", -1)
+	logStr += fmt.Sprintf(" backoff_ms:%d backoff_types:%s", bo.totalSleep, backoffTypes)
+	//}
 	var detail *kvrpcpb.ExecDetails
 	if resp.Resp != nil {
 		detail = resp.Resp.(*coprocessor.Response).ExecDetails
@@ -682,6 +683,11 @@ func (worker *copIteratorWorker) logTimeCopTask(costTime time.Duration, task *co
 			}
 		}
 	}
+	logStr += fmt.Sprintf(" GetConn: %s, SendBatch %s, RecvBatch: %s, OnFail: %s , NumOfTask: %d, getCtx: %s, sendReq: %s, onRegionErr: %s, backoffLoop: %d",
+		time.Duration(atomic.LoadInt64(&bo.getConn)).String(), time.Duration(atomic.LoadInt64(&bo.sendBatch)).String(), time.Duration(atomic.LoadInt64(&bo.recvBatch)).String(),
+		time.Duration(atomic.LoadInt64(&bo.onFail)).String(), atomic.LoadInt32(&bo.noOfTask),
+		time.Duration(atomic.LoadInt64(&bo.getCtx)).String(), time.Duration(atomic.LoadInt64(&bo.sendReq)).String(),
+		time.Duration(atomic.LoadInt64(&bo.regionErr)).String(), atomic.LoadUint32(&bo.backoffLoop))
 	logutil.BgLogger().Info(logStr)
 }
 

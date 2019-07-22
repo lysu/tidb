@@ -16,6 +16,7 @@ package tikv
 
 import (
 	"context"
+	"go.uber.org/zap"
 	"io"
 	"math"
 	"strconv"
@@ -118,6 +119,7 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 	keepAlive := cfg.TiKVClient.GrpcKeepAliveTime
 	keepAliveTimeout := cfg.TiKVClient.GrpcKeepAliveTimeout
 	for i := range a.v {
+		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
 		conn, err := grpc.DialContext(
 			ctx,
@@ -135,6 +137,11 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 				PermitWithoutStream: true,
 			}),
 		)
+		logutil.BgLogger().Warn("dial to store",
+			zap.String("store", addr),
+			zap.Duration("time", time.Since(start)),
+			zap.Error(err),
+			zap.Stringer("start-time", start))
 		cancel()
 		if err != nil {
 			// Cleanup if the initialization fails.
@@ -266,6 +273,12 @@ func (c *rpcClient) closeConns() {
 
 // SendRequest sends a Request to server and receives Response.
 func (c *rpcClient) SendRequest(ctx context.Context, addr string, req *tikvrpc.Request, timeout time.Duration) (*tikvrpc.Response, error) {
+
+	var bo *Backoffer
+	if x := ctx.Value("bo"); x != nil {
+		bo = x.(*Backoffer)
+	}
+
 	start := time.Now()
 	reqType := req.Type.String()
 	storeID := strconv.FormatUint(req.Context.GetPeer().GetStoreId(), 10)
@@ -277,14 +290,19 @@ func (c *rpcClient) SendRequest(ctx context.Context, addr string, req *tikvrpc.R
 		c.recycleIdleConnArray()
 	}
 
+	s := time.Now()
 	connArray, err := c.getConnArray(addr)
+	if bo != nil {
+		atomic.AddInt64(&bo.getConn, int64(time.Duration(time.Since(s))))
+	}
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
 
 	if config.GetGlobalConfig().TiKVClient.MaxBatchSize > 0 {
 		if batchReq := req.ToBatchCommandsRequest(); batchReq != nil {
-			return sendBatchRequest(ctx, addr, connArray.batchConn, batchReq, timeout)
+			resp, err := sendBatchRequest(ctx, addr, connArray.batchConn, batchReq, timeout)
+			return resp, err
 		}
 	}
 
