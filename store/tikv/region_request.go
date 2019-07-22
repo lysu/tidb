@@ -95,7 +95,12 @@ func (s *RegionRequestSender) SendReqCtx(bo *Backoffer, req *tikvrpc.Request, re
 	})
 
 	for {
+
+		atomic.AddUint32(&bo.backoffLoop, 1)
+
+		start := time.Now()
 		ctx, err := s.regionCache.GetRPCContext(bo, regionID)
+		atomic.AddInt64(&bo.getCtx, int64(time.Since(start)))
 		if err != nil {
 			return nil, nil, errors.Trace(err)
 		}
@@ -110,8 +115,10 @@ func (s *RegionRequestSender) SendReqCtx(bo *Backoffer, req *tikvrpc.Request, re
 			return resp, nil, err
 		}
 
+		start = time.Now()
 		s.storeAddr = ctx.Addr
 		resp, retry, err := s.sendReqToRegion(bo, ctx, req, timeout)
+		atomic.AddInt64(&bo.sendReq, int64(time.Since(start)))
 		if err != nil {
 			return nil, nil, errors.Trace(err)
 		}
@@ -119,19 +126,24 @@ func (s *RegionRequestSender) SendReqCtx(bo *Backoffer, req *tikvrpc.Request, re
 			continue
 		}
 
+		start = time.Now()
 		regionErr, err := resp.GetRegionError()
 		if err != nil {
+			atomic.AddInt64(&bo.regionErr, int64(time.Since(start)))
 			return nil, nil, errors.Trace(err)
 		}
 		if regionErr != nil {
 			retry, err := s.onRegionError(bo, ctx, regionErr)
 			if err != nil {
+				atomic.AddInt64(&bo.regionErr, int64(time.Since(start)))
 				return nil, nil, errors.Trace(err)
 			}
 			if retry {
+				atomic.AddInt64(&bo.regionErr, int64(time.Since(start)))
 				continue
 			}
 		}
+		atomic.AddInt64(&bo.regionErr, int64(time.Since(start)))
 		return resp, ctx, nil
 	}
 }
@@ -140,10 +152,15 @@ func (s *RegionRequestSender) sendReqToRegion(bo *Backoffer, ctx *RPCContext, re
 	if e := tikvrpc.SetContext(req, ctx.Meta, ctx.Peer); e != nil {
 		return nil, false, errors.Trace(e)
 	}
-	resp, err = s.client.SendRequest(bo.ctx, ctx.Addr, req, timeout)
+
+	bctx := context.WithValue(bo.ctx, "bo", bo)
+	resp, err = s.client.SendRequest(bctx, ctx.Addr, req, timeout)
 	if err != nil {
 		s.rpcError = err
-		if e := s.onSendFail(bo, ctx, err); e != nil {
+		start := time.Now()
+		e := s.onSendFail(bo, ctx, err)
+		atomic.AddInt64(&bo.onFail, int64(time.Since(start)))
+		if e != nil {
 			return nil, false, errors.Trace(e)
 		}
 		return nil, true, nil

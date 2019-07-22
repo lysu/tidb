@@ -225,12 +225,22 @@ var CommitMaxBackoff = 41000
 type Backoffer struct {
 	ctx context.Context
 
-	fn         map[backoffType]func(context.Context, int) int
-	maxSleep   int
-	totalSleep int
-	errors     []error
-	types      []backoffType
-	vars       *kv.Variables
+	fn          map[backoffType]func(context.Context, int) int
+	maxSleep    int
+	totalSleep  int
+	errors      []error
+	types       []backoffType
+	vars        *kv.Variables
+	backoffLoop uint32
+
+	noOfTask  int32
+	getCtx    int64
+	sendReq   int64
+	regionErr int64
+	onFail    int64
+	getConn   int64
+	sendBatch int64
+	recvBatch int64
 }
 
 // txnStartKey is a key for transaction start_ts info in context.Context.
@@ -294,7 +304,7 @@ func (b *Backoffer) BackoffWithMaxSleep(typ backoffType, maxSleepMs int, err err
 	if ts := b.ctx.Value(txnStartKey); ts != nil {
 		startTs = ts
 	}
-	logutil.BgLogger().Debug("retry later",
+	logutil.BgLogger().Warn("retry later",
 		zap.Error(err),
 		zap.Int("totalSleep", b.totalSleep),
 		zap.Int("maxSleep", b.maxSleep),

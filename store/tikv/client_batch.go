@@ -416,12 +416,20 @@ func sendBatchRequest(
 	req *tikvpb.BatchCommandsRequest_Request,
 	timeout time.Duration,
 ) (*tikvrpc.Response, error) {
+
+	var bo *Backoffer
+	if x := ctx.Value("bo"); x != nil {
+		bo = x.(*Backoffer)
+	}
+
 	entry := &batchCommandsEntry{
 		req:      req,
 		res:      make(chan *tikvpb.BatchCommandsResponse_Response, 1),
 		canceled: 0,
 		err:      nil,
 	}
+
+	start := time.Now()
 	ctx1, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	select {
@@ -429,19 +437,35 @@ func sendBatchRequest(
 	case <-ctx1.Done():
 		logutil.BgLogger().Warn("send request is cancelled",
 			zap.String("to", addr), zap.String("cause", ctx1.Err().Error()))
+		if bo != nil {
+			atomic.AddInt64(&bo.sendBatch, int64(time.Since(start)))
+		}
 		return nil, errors.Trace(ctx1.Err())
 	}
+	if bo != nil {
+		atomic.AddInt64(&bo.sendBatch, int64(time.Since(start)))
+	}
 
+	start = time.Now()
 	select {
 	case res, ok := <-entry.res:
 		if !ok {
+			if bo != nil {
+				atomic.AddInt64(&bo.recvBatch, int64(time.Since(start)))
+			}
 			return nil, errors.Trace(entry.err)
+		}
+		if bo != nil {
+			atomic.AddInt64(&bo.recvBatch, int64(time.Since(start)))
 		}
 		return tikvrpc.FromBatchCommandsResponse(res), nil
 	case <-ctx1.Done():
 		atomic.StoreInt32(&entry.canceled, 1)
 		logutil.BgLogger().Warn("wait response is cancelled",
 			zap.String("to", addr), zap.String("cause", ctx1.Err().Error()))
+		if bo != nil {
+			atomic.AddInt64(&bo.recvBatch, int64(time.Since(start)))
+		}
 		return nil, errors.Trace(ctx1.Err())
 	}
 }

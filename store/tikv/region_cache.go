@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/pingcap/log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -286,6 +287,10 @@ func (c *RegionCache) GetRPCContext(bo *Backoffer, id RegionVerID) (*RPCContext,
 		newRegionStore.workStoreIdx = regionStore.workStoreIdx
 		newRegionStore.epochs[newRegionStore.workStoreIdx] = storeFailEpoch
 		cachedRegion.compareAndSwapStore(regionStore, newRegionStore)
+		log.Warn("doing invalid region caused by send fail",
+			zap.String("store", regionStore.stores[regionStore.workStoreIdx].addr),
+			zap.Uint64("region", id.id))
+		//cachedRegion.invalidate()
 		return nil, nil
 	}
 
@@ -615,7 +620,15 @@ func (c *RegionCache) getRegionByIDFromCache(regionID uint64) *Region {
 // when processing in reverse order.
 func (c *RegionCache) loadRegion(bo *Backoffer, key []byte, isEndKey bool) (*Region, error) {
 	var backoffErr error
+	var meta *metapb.Region
 	searchPrev := false
+	start := time.Now()
+	defer func() {
+		logutil.BgLogger().Warn("load region from pd",
+			zap.Stringer("region", meta),
+			zap.Duration("time", time.Since(start)),
+		)
+	}()
 	for {
 		if backoffErr != nil {
 			err := bo.Backoff(BoPDRPC, backoffErr)
@@ -623,7 +636,6 @@ func (c *RegionCache) loadRegion(bo *Backoffer, key []byte, isEndKey bool) (*Reg
 				return nil, errors.Trace(err)
 			}
 		}
-		var meta *metapb.Region
 		var leader *metapb.Peer
 		var err error
 		if searchPrev {
@@ -967,6 +979,7 @@ func (c *RegionCache) switchNextPeer(r *Region, currentPeerIdx int, err error) {
 		epoch := rs.epochs[rs.workStoreIdx]
 		if atomic.CompareAndSwapUint32(&s.failEpoch, epoch, epoch+1) {
 			rs.epochs[rs.workStoreIdx] = epoch + 1
+			logutil.BgLogger().Warn("mark store regions need be refill", zap.String("store", s.addr))
 		}
 	}
 
