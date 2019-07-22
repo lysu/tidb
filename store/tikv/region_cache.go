@@ -290,7 +290,7 @@ func (c *RegionCache) GetRPCContext(bo *Backoffer, id RegionVerID) (*RPCContext,
 		log.Warn("doing invalid region caused by send fail",
 			zap.String("store", regionStore.stores[regionStore.workStoreIdx].addr),
 			zap.Uint64("region", id.id))
-		//cachedRegion.invalidate()
+		cachedRegion.invalidate()
 		return nil, nil
 	}
 
