@@ -233,14 +233,15 @@ type Backoffer struct {
 	vars        *kv.Variables
 	backoffLoop uint32
 
-	noOfTask  int32
-	getCtx    int64
-	sendReq   int64
-	regionErr int64
-	onFail    int64
-	getConn   int64
-	sendBatch int64
-	recvBatch int64
+	noOfTask   int32
+	getCtx     int64
+	sendReq    int64
+	regionErr  int64
+	onFail     int64
+	getConn    int64
+	sendBatch  int64
+	recvBatch  int64
+	sendStores []string
 }
 
 // txnStartKey is a key for transaction start_ts info in context.Context.
