@@ -683,7 +683,7 @@ func (worker *copIteratorWorker) logTimeCopTask(costTime time.Duration, task *co
 			}
 		}
 	}
-	logStr += fmt.Sprintf(" Hosts: %v", bo.sendHosts)
+	logStr += fmt.Sprintf(" Hosts: %v, SendTs: %v, LoadRegionTs: %v", bo.sendHosts, bo.loadRegion, bo.sendTimes)
 	logStr += fmt.Sprintf(" GetConn: %s, SendBatch %s, RecvBatch: %s, OnFail: %s , NumOfTask: %d, getCtx: %s, sendReq: %s, onRegionErr: %s, backoffLoop: %d",
 		time.Duration(atomic.LoadInt64(&bo.getConn)).String(), time.Duration(atomic.LoadInt64(&bo.sendBatch)).String(), time.Duration(atomic.LoadInt64(&bo.recvBatch)).String(),
 		time.Duration(atomic.LoadInt64(&bo.onFail)).String(), atomic.LoadInt32(&bo.noOfTask),
