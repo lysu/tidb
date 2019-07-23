@@ -979,7 +979,6 @@ func (c *RegionCache) switchNextPeer(r *Region, currentPeerIdx int, err error) {
 		s := rs.stores[rs.workStoreIdx]
 		epoch := rs.epochs[rs.workStoreIdx]
 		if atomic.CompareAndSwapUint32(&s.failEpoch, epoch, epoch+1) {
-			rs.epochs[rs.workStoreIdx] = epoch + 1
 			logutil.BgLogger().Warn("mark store regions need be refill", zap.String("store", s.addr))
 		}
 	}
