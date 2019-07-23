@@ -174,7 +174,6 @@ func (l *tryLock) lockForRecreate() {
 	l.Lock()
 	l.reCreating = true
 	l.Unlock()
-
 }
 
 func (l *tryLock) unlockForRecreate() {
@@ -408,14 +407,24 @@ func (a *batchConn) batchSendLoop(cfg config.TiKVClient) {
 
 func (a *batchConn) getClientAndSend(entries []*batchCommandsEntry, requests []*tikvpb.BatchCommandsRequest_Request, requestIDs []uint64) {
 	// Choose a connection by round-robbin.
-	var cli *batchCommandsClient
-	for {
+	var cli *batchCommandsClient = nil
+	var target string
+	for i := 0; i < len(a.batchCommandsClients); i++ {
 		a.index = (a.index + 1) % uint32(len(a.batchCommandsClients))
-		cli = a.batchCommandsClients[a.index]
+		target = a.batchCommandsClients[a.index].target
 		// The lock protects the batchCommandsClient from been closed while it's inuse.
-		if cli.tryLockForSend() {
+		if a.batchCommandsClients[a.index].tryLockForSend() {
+			cli = a.batchCommandsClients[a.index]
 			break
 		}
+	}
+	if cli == nil {
+		logutil.BgLogger().Error("no available connection", zap.String("target", target))
+		for _, entry := range entries {
+			entry.err = errors.New("no available connection")
+			close(entry.res)
+		}
+		return
 	}
 	defer cli.unlockForSend()
 
