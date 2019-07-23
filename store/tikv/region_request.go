@@ -154,7 +154,8 @@ func (s *RegionRequestSender) sendReqToRegion(bo *Backoffer, ctx *RPCContext, re
 	}
 
 	bctx := context.WithValue(bo.ctx, "bo", bo)
-	bo.sendStores = append(bo.sendStores, ctx.Addr)
+	bo.sendHosts = append(bo.sendHosts, ctx.Addr)
+	bo.sendTimes = append(bo.sendTimes, time.Now())
 	resp, err = s.client.SendRequest(bctx, ctx.Addr, req, timeout)
 	if err != nil {
 		s.rpcError = err

@@ -628,6 +628,7 @@ func (c *RegionCache) loadRegion(bo *Backoffer, key []byte, isEndKey bool) (*Reg
 			zap.Stringer("region", meta),
 			zap.Duration("time", time.Since(start)),
 		)
+		bo.loadRegion = append(bo.loadRegion, time.Now())
 	}()
 	for {
 		if backoffErr != nil {
