@@ -241,7 +241,9 @@ type Backoffer struct {
 	getConn    int64
 	sendBatch  int64
 	recvBatch  int64
-	sendStores []string
+	sendHosts  []string
+	sendTimes  []time.Time
+	loadRegion []time.Time
 }
 
 // txnStartKey is a key for transaction start_ts info in context.Context.
