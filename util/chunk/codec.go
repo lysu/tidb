@@ -124,15 +124,19 @@ func (c *Codec) decodeColumn(buffer []byte, col *Column, ordinal int) (remained 
 	}
 
 	// decode offsets.
-	numFixedBytes := getFixedLen(c.colTypes[ordinal])
-	numDataBytes := int64(numFixedBytes * col.length)
-	if numFixedBytes == -1 {
-		numOffsetBytes := (col.length + 1) * 8
+	numBytes, fixed := getElemLen(c.colTypes[ordinal])
+	numDataBytes := int64(numBytes * col.length)
+	if !fixed {
+		estimatedElemLen := 8
+		if numBytes > 0 {
+			estimatedElemLen = numBytes
+		}
+		numOffsetBytes := (col.length + 1) * estimatedElemLen
 		col.offsets = append(col.offsets[:0], c.bytesToI64Slice(buffer[:numOffsetBytes])...)
 		buffer = buffer[numOffsetBytes:]
 		numDataBytes = col.offsets[col.length]
-	} else if cap(col.elemBuf) < numFixedBytes {
-		col.elemBuf = make([]byte, numFixedBytes)
+	} else if cap(col.elemBuf) < numBytes {
+		col.elemBuf = make([]byte, numBytes)
 	}
 
 	// decode data.
@@ -166,19 +170,21 @@ func (c *Codec) bytesToI64Slice(b []byte) (i64s []int64) {
 // varElemLen indicates this Column is a variable length Column.
 const varElemLen = -1
 
-func getFixedLen(colType *types.FieldType) int {
+func getElemLen(colType *types.FieldType) (len int, fixed bool) {
 	switch colType.Tp {
 	case mysql.TypeFloat:
-		return 4
+		return 4, true
 	case mysql.TypeTiny, mysql.TypeShort, mysql.TypeInt24, mysql.TypeLong,
 		mysql.TypeLonglong, mysql.TypeDouble, mysql.TypeYear, mysql.TypeDuration:
-		return 8
+		return 8, true
 	case mysql.TypeDate, mysql.TypeDatetime, mysql.TypeTimestamp:
-		return 16
+		return 16, true
 	case mysql.TypeNewDecimal:
-		return types.MyDecimalStructSize
+		return types.MyDecimalStructSize, true
+	case mysql.TypeString:
+		return colType.Flen, false
 	default:
-		return varElemLen
+		return varElemLen, false
 	}
 }
 

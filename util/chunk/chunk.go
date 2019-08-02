@@ -102,7 +102,8 @@ func Renew(chk *Chunk, maxChunkSize int) *Chunk {
 func renewColumns(oldCol []*Column, cap int) []*Column {
 	columns := make([]*Column, 0, len(oldCol))
 	for _, col := range oldCol {
-		columns = append(columns, newColumn(col.typeSize(), cap))
+		typeSize := col.typeSize()
+		columns = append(columns, newColumn(typeSize, cap, typeSize != varElemLen))
 	}
 	return columns
 }
@@ -128,8 +129,11 @@ func newFixedLenColumn(elemLen, cap int) *Column {
 }
 
 // newVarLenColumn creates a variable length Column with initial data capacity.
-func newVarLenColumn(cap int, old *Column) *Column {
+func newVarLenColumn(cap int, old *Column, elemLen int) *Column {
 	estimatedElemLen := 8
+	if elemLen > 0 {
+		estimatedElemLen = elemLen
+	}
 	// For varLenColumn (e.g. varchar), the accurate length of an element is unknown.
 	// Therefore, in the first executor.Next we use an experience value -- 8 (so it may make runtime.growslice)
 	// but in the following Next call we estimate the length as AVG x 1.125 elemLen of the previous call.

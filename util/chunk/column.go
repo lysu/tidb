@@ -67,13 +67,14 @@ type Column struct {
 
 // NewColumn creates a new column with the specific length and capacity.
 func NewColumn(ft *types.FieldType, cap int) *Column {
-	return newColumn(getFixedLen(ft), cap)
+	elemLen, fixed := getElemLen(ft)
+	return newColumn(elemLen, cap, fixed)
 }
 
-func newColumn(typeSize, cap int) *Column {
+func newColumn(typeSize, cap int, fixed bool) *Column {
 	var col *Column
-	if typeSize == varElemLen {
-		col = newVarLenColumn(cap, nil)
+	if !fixed {
+		col = newVarLenColumn(cap, nil, typeSize)
 	} else {
 		col = newFixedLenColumn(typeSize, cap)
 	}
@@ -506,7 +507,8 @@ func (c *Column) CopyReconstruct(sel []int, dst *Column) *Column {
 	}
 
 	if dst == nil {
-		dst = newColumn(c.typeSize(), len(sel))
+		typeSize := c.typeSize()
+		dst = newColumn(typeSize, len(sel), typeSize != varElemLen)
 	} else {
 		dst.Reset()
 	}

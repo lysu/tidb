@@ -35,7 +35,7 @@ type Pool struct {
 func NewPool(initCap int) *Pool {
 	return &Pool{
 		initCap:         initCap,
-		varLenColPool:   &sync.Pool{New: func() interface{} { return newVarLenColumn(initCap, nil) }},
+		varLenColPool:   &sync.Pool{New: func() interface{} { return newVarLenColumn(initCap, nil, varElemLen) }},
 		fixLenColPool4:  &sync.Pool{New: func() interface{} { return newFixedLenColumn(4, initCap) }},
 		fixLenColPool8:  &sync.Pool{New: func() interface{} { return newFixedLenColumn(8, initCap) }},
 		fixLenColPool16: &sync.Pool{New: func() interface{} { return newFixedLenColumn(16, initCap) }},
@@ -49,9 +49,12 @@ func (p *Pool) GetChunk(fields []*types.FieldType) *Chunk {
 	chk.capacity = p.initCap
 	chk.columns = make([]*Column, len(fields))
 	for i, f := range fields {
-		switch elemLen := getFixedLen(f); elemLen {
-		case varElemLen:
+		elemLen, fixed := getElemLen(f)
+		if !fixed {
 			chk.columns[i] = p.varLenColPool.Get().(*Column)
+			continue
+		}
+		switch elemLen {
 		case 4:
 			chk.columns[i] = p.fixLenColPool4.Get().(*Column)
 		case 8:
@@ -68,9 +71,12 @@ func (p *Pool) GetChunk(fields []*types.FieldType) *Chunk {
 // PutChunk puts a Chunk back to the Pool.
 func (p *Pool) PutChunk(fields []*types.FieldType, chk *Chunk) {
 	for i, f := range fields {
-		switch elemLen := getFixedLen(f); elemLen {
-		case varElemLen:
+		elemLen, fixed := getElemLen(f)
+		if !fixed {
 			p.varLenColPool.Put(chk.columns[i])
+			continue
+		}
+		switch elemLen {
 		case 4:
 			p.fixLenColPool4.Put(chk.columns[i])
 		case 8:
