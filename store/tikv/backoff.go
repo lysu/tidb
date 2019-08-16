@@ -86,14 +86,14 @@ func (t backoffType) metric() (prometheus.Counter, prometheus.Observer) {
 // NewBackoffFn creates a backoff func which implements exponential backoff with
 // optional jitters.
 // See http://www.awsarchitectureblog.com/2015/03/backoff.html
-func NewBackoffFn(base, cap, jitter int) func(ctx context.Context, maxSleepMs int) int {
+func NewBackoffFn(base, cap, jitter int) func(ctx context.Context, maxSleepMs int) (sleepMs, retAttempt int) {
 	if base < 2 {
 		// Top prevent panic in 'rand.Intn'.
 		base = 2
 	}
 	attempts := 0
 	lastSleep := base
-	return func(ctx context.Context, maxSleepMs int) int {
+	return func(ctx context.Context, maxSleepMs int) (sleepMs, retAttempt int) {
 		var sleep int
 		switch jitter {
 		case NoJitter:
@@ -120,9 +120,9 @@ func NewBackoffFn(base, cap, jitter int) func(ctx context.Context, maxSleepMs in
 		case <-time.After(time.Duration(realSleep) * time.Millisecond):
 			attempts++
 			lastSleep = sleep
-			return realSleep
+			return realSleep, attempts
 		case <-ctx.Done():
-			return 0
+			return 0, attempts
 		}
 	}
 }
@@ -144,7 +144,7 @@ const (
 	boServerBusy
 )
 
-func (t backoffType) createFn(vars *kv.Variables) func(context.Context, int) int {
+func (t backoffType) createFn(vars *kv.Variables) func(context.Context, int) (int, int) {
 	if vars.Hook != nil {
 		vars.Hook(t.String(), vars)
 	}
@@ -233,7 +233,7 @@ var CommitMaxBackoff = 41000
 type Backoffer struct {
 	ctx context.Context
 
-	fn         map[backoffType]func(context.Context, int) int
+	fn         map[backoffType]func(context.Context, int) (int, int)
 	maxSleep   int
 	totalSleep int
 	errors     []error
@@ -290,7 +290,7 @@ func (b *Backoffer) BackoffWithMaxSleep(typ backoffType, maxSleepMs int, err err
 	backoffCounter.Inc()
 	// Lazy initialize.
 	if b.fn == nil {
-		b.fn = make(map[backoffType]func(context.Context, int) int)
+		b.fn = make(map[backoffType]func(context.Context, int) (int, int))
 	}
 	f, ok := b.fn[typ]
 	if !ok {
@@ -298,7 +298,8 @@ func (b *Backoffer) BackoffWithMaxSleep(typ backoffType, maxSleepMs int, err err
 		b.fn[typ] = f
 	}
 
-	realSleep := f(b.ctx, maxSleepMs)
+	realSleep, attempts := f(b.ctx, maxSleepMs)
+	logutil.Eventf(b.ctx, "backoff %s and sleep %dms as %d attemp", typ, realSleep, attempts)
 	backoffDuration.Observe(float64(realSleep) / 1000)
 	b.totalSleep += realSleep
 	b.types = append(b.types, typ)
