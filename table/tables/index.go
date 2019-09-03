@@ -40,6 +40,8 @@ func EncodeHandle(h int64) []byte {
 	if err != nil {
 		panic(err)
 	}
+	binary.BigEndian.PutUint64(data[:], uint64(h))
+
 	return buf.Bytes()
 }
 

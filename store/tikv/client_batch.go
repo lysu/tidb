@@ -233,7 +233,7 @@ func (c *batchCommandsClient) failPendingRequests(err error) {
 		entry, _ := value.(*batchCommandsEntry)
 		entry.err = err
 		c.batched.Delete(id)
-		close(entry.res)
+		entry.resWg.Done()
 		return true
 	})
 }
@@ -303,7 +303,8 @@ func (c *batchCommandsClient) batchRecvLoop(cfg config.TiKVClient, tikvTransport
 			logutil.Eventf(entry.ctx, "receive %T response with other %d batched requests from %s", responses[i].GetCmd(), len(responses), c.target)
 			if atomic.LoadInt32(&entry.canceled) == 0 {
 				// Put the response only if the request is not canceled.
-				entry.res <- responses[i]
+				entry.res = responses[i]
+				entry.resWg.Done()
 			}
 			c.batched.Delete(requestID)
 		}
@@ -340,9 +341,11 @@ func (c *batchCommandsClient) reCreateStreamingClient(err error) (stopped bool) 
 }
 
 type batchCommandsEntry struct {
-	ctx context.Context
-	req *tikvpb.BatchCommandsRequest_Request
-	res chan *tikvpb.BatchCommandsResponse_Response
+	ctx      context.Context
+	req      *tikvpb.BatchCommandsRequest_Request
+	resWg    sync.WaitGroup
+	res      *tikvpb.BatchCommandsResponse_Response
+	deadline time.Time
 
 	// canceled indicated the request is canceled or not.
 	canceled int32
@@ -427,7 +430,7 @@ func (a *batchConn) getClientAndSend(entries []*batchCommandsEntry, requests []*
 		for _, entry := range entries {
 			// Please ensure the error is handled in region cache correctly.
 			entry.err = errors.New("no available connections")
-			close(entry.res)
+			entry.resWg.Done()
 		}
 		return
 	}
@@ -483,32 +486,18 @@ func sendBatchRequest(
 	entry := &batchCommandsEntry{
 		ctx:      ctx,
 		req:      req,
-		res:      make(chan *tikvpb.BatchCommandsResponse_Response, 1),
 		canceled: 0,
 		err:      nil,
 	}
-	ctx1, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	select {
-	case batchConn.batchCommandsCh <- entry:
-	case <-ctx1.Done():
-		logutil.BgLogger().Warn("send request is cancelled",
-			zap.String("to", addr), zap.String("cause", ctx1.Err().Error()))
-		return nil, errors.Trace(ctx1.Err())
-	}
 
-	select {
-	case res, ok := <-entry.res:
-		if !ok {
-			return nil, errors.Trace(entry.err)
-		}
-		return tikvrpc.FromBatchCommandsResponse(res), nil
-	case <-ctx1.Done():
-		atomic.StoreInt32(&entry.canceled, 1)
-		logutil.BgLogger().Warn("wait response is cancelled",
-			zap.String("to", addr), zap.String("cause", ctx1.Err().Error()))
-		return nil, errors.Trace(ctx1.Err())
+	entry.deadline = time.Now().Add(timeout)
+	batchConn.batchCommandsCh <- entry
+
+	entry.resWg.Wait()
+	if entry.err != nil {
+		return nil, errors.Trace(entry.err)
 	}
+	return tikvrpc.FromBatchCommandsResponse(entry.res), nil
 }
 
 func (c *rpcClient) recycleIdleConnArray() {
