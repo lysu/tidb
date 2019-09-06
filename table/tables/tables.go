@@ -20,6 +20,8 @@ package tables
 import (
 	"context"
 	"encoding/binary"
+	"github.com/pingcap/tidb/util/chunk"
+	"github.com/pingcap/tidb/util/rowcodec"
 	"math"
 	"strconv"
 	"strings"
@@ -626,22 +628,54 @@ func (t *tableCommon) addIndices(sctx sessionctx.Context, recordID int64, r []ty
 }
 
 // RowWithCols implements table.Table RowWithCols interface.
-func (t *tableCommon) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column) ([]types.Datum, error) {
+func (t *tableCommon) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column, chk *chunk.Chunk,
+	appendChk func(row []types.Datum, chk *chunk.Chunk)) error {
 	// Get raw row data from kv.
 	key := t.RecordKey(h)
 	txn, err := ctx.Txn(true)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	value, err := txn.Get(context.TODO(), key)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	v, _, err := DecodeRawRowData(ctx, t.Meta(), h, cols, value)
+
+	err = DecodeRawRowChunk(ctx, t.Meta(), h, cols, chk, value)
+	if err == rowcodec.ErrInvalidCodecVer {
+		// backport for old row format.
+		v, _, err := DecodeRawRowData(ctx, t.Meta(), h, cols, value)
+		if err != nil {
+			return err
+		}
+		appendChk(v, chk)
+		return nil
+	}
+	return err
+}
+
+// DecodeRawRowChunk decodes raw row data into a chunk.
+func DecodeRawRowChunk(ctx sessionctx.Context, meta *model.TableInfo, h int64, cols []*table.Column,
+	chk *chunk.Chunk, value []byte) error {
+	reqCols := make([]int64, len(cols))
+	fts := make([]*types.FieldType, len(cols))
+	defs := make([][]byte, len(cols))
+	var hCol int64
+	for i, col := range cols {
+		if col.IsPKHandleColumn(meta) {
+			hCol = col.ID
+			continue
+		}
+		reqCols[i] = col.ID
+		fts[i] = &col.FieldType
+		defs[i] = col.DefaultValueBit
+	}
+
+	decoder, err := rowcodec.NewDecoder(reqCols, hCol, fts, defs, ctx.GetSessionVars().StmtCtx)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return v, nil
+	return decoder.Decode(value, h, chk)
 }
 
 // DecodeRawRowData decodes raw row data into a datum slice and a (columnID:columnValue) map.
@@ -690,7 +724,14 @@ func DecodeRawRowData(ctx sessionctx.Context, meta *model.TableInfo, h int64, co
 
 // Row implements table.Table Row interface.
 func (t *tableCommon) Row(ctx sessionctx.Context, h int64) ([]types.Datum, error) {
-	return t.RowWithCols(ctx, h, t.Cols())
+	var r []types.Datum
+	err := t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
+		r = row
+	})
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // RemoveRecord implements table.Table RemoveRecord interface.

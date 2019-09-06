@@ -16,6 +16,7 @@ package infoschema
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/pingcap/tidb/util/chunk"
 	"sort"
 	"sync"
 	"time"
@@ -1967,14 +1968,14 @@ func (it *infoschemaTable) IterRecords(ctx sessionctx.Context, startKey kv.Key, 
 	return nil
 }
 
-// RowWithCols implements table.Table RowWithCols interface.
-func (it *infoschemaTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column) ([]types.Datum, error) {
-	return nil, table.ErrUnsupportedOp
-}
-
 // Row implements table.Table Row interface.
 func (it *infoschemaTable) Row(ctx sessionctx.Context, h int64) ([]types.Datum, error) {
 	return nil, table.ErrUnsupportedOp
+}
+
+// RowWithCols2 implements table.Table RowWithCols interface.
+func (it *infoschemaTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column, chk *chunk.Chunk, appendChk func(row []types.Datum, chk *chunk.Chunk)) error {
+	return table.ErrUnsupportedOp
 }
 
 // Cols implements table.Table Cols interface.
@@ -2085,8 +2086,8 @@ func (vt *VirtualTable) IterRecords(ctx sessionctx.Context, startKey kv.Key, col
 }
 
 // RowWithCols implements table.Table RowWithCols interface.
-func (vt *VirtualTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column) ([]types.Datum, error) {
-	return nil, table.ErrUnsupportedOp
+func (vt *VirtualTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column, chk *chunk.Chunk, appendChk func(row []types.Datum, chk *chunk.Chunk)) error {
+	return table.ErrUnsupportedOp
 }
 
 // Row implements table.Table Row interface.

@@ -24,7 +24,8 @@ import (
 // CodecVer is the constant number that represent the new row format.
 const CodecVer = 128
 
-var errInvalidCodecVer = errors.New("invalid codec version")
+// ErrInvalidCodecVer indicates row format not match to new version.
+var ErrInvalidCodecVer = errors.New("invalid codec version")
 
 // row is the struct type used to access a row.
 // There are two types of row, small and large.
@@ -64,7 +65,7 @@ func (r *row) getData(i int) []byte {
 
 func (r *row) setRowData(rowData []byte) error {
 	if rowData[0] != CodecVer {
-		return errInvalidCodecVer
+		return ErrInvalidCodecVer
 	}
 	r.isLarge = rowData[1]&1 > 0
 	r.numNotNullCols = binary.LittleEndian.Uint16(rowData[2:])
