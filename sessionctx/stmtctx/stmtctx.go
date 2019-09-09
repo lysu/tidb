@@ -390,6 +390,9 @@ func (sc *StatementContext) HandleTruncate(err error) error {
 	if err == nil {
 		return nil
 	}
+	if sc == nil {
+		return nil
+	}
 	if sc.IgnoreTruncate {
 		return nil
 	}
@@ -405,7 +408,9 @@ func (sc *StatementContext) HandleOverflow(err error, warnErr error) error {
 	if err == nil {
 		return nil
 	}
-
+	if sc == nil {
+		return nil
+	}
 	if sc.OverflowAsWarning {
 		sc.AppendWarning(warnErr)
 		return nil

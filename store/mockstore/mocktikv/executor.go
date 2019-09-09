@@ -16,6 +16,7 @@ package mocktikv
 import (
 	"bytes"
 	"context"
+	"github.com/pingcap/tidb/util/rowcodec"
 	"sort"
 	"time"
 
@@ -190,7 +191,7 @@ func (e *tableScanExec) getRowFromPoint(ran kv.KeyRange) ([][]byte, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	row, err := getRowData(e.Columns, e.colIDs, handle, val)
+	row, err := getRowData2(e.Columns, e.colIDs, handle, val)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -238,7 +239,7 @@ func (e *tableScanExec) getRowFromRange(ran kv.KeyRange) ([][]byte, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	row, err := getRowData(e.Columns, e.colIDs, handle, pair.Value)
+	row, err := getRowData2(e.Columns, e.colIDs, handle, pair.Value)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -662,6 +663,33 @@ func hasColVal(data [][]byte, colIDs map[int64]int, id int64) bool {
 		return true
 	}
 	return false
+}
+
+func getRowData2(columns []*tipb.ColumnInfo, colIDs map[int64]int, handle int64, value []byte) ([][]byte, error) {
+	reqCols := make([]int64, len(columns))
+	handleCol := int64(-1)
+	tps := make([]*types.FieldType, len(columns))
+	defs := make([][]byte, len(columns))
+	unsignedHandle := false
+	for i, col := range columns {
+		id := col.GetColumnId()
+		if col.GetPkHandle() || id == model.ExtraHandleID {
+			handleCol = id
+			unsignedHandle = mysql.HasUnsignedFlag(uint(col.GetFlag()))
+		}
+		reqCols[i] = id
+		tps[i] = fieldTypeFromPBColumn(col)
+		defs[i] = col.DefaultVal
+	}
+	rd, err := rowcodec.NewDecoderWithByteDefault(reqCols, handleCol, tps, defs, nil)
+	if err != nil {
+		return nil, err
+	}
+	values, err := rd.DecodeBytes(value, handle, unsignedHandle)
+	if err != nil {
+		return nil, err
+	}
+	return values, nil
 }
 
 // getRowData decodes raw byte slice to row data.

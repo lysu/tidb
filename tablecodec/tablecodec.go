@@ -16,6 +16,7 @@ package tablecodec
 import (
 	"bytes"
 	"encoding/binary"
+	"github.com/pingcap/tidb/util/rowcodec"
 	"math"
 	"time"
 
@@ -241,12 +242,10 @@ func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, 
 	}
 	valBuf = valBuf[:0]
 	if values == nil {
-		values = make([]types.Datum, len(row)*2)
+		values = make([]types.Datum, len(row))
 	}
 	for i, c := range row {
-		id := colIDs[i]
-		values[2*i].SetInt64(id)
-		err := flatten(sc, c, &values[2*i+1])
+		err := flatten(sc, c, &values[i])
 		if err != nil {
 			return valBuf, errors.Trace(err)
 		}
@@ -255,7 +254,7 @@ func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, 
 		// We could not set nil value into kv.
 		return append(valBuf, codec.NilFlag), nil
 	}
-	return codec.EncodeValue(sc, valBuf, values...)
+	return rowcodec.NewEncoder(colIDs, sc).Encode(values, valBuf)
 }
 
 func flatten(sc *stmtctx.StatementContext, data types.Datum, ret *types.Datum) error {

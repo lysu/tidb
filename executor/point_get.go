@@ -15,6 +15,7 @@ package executor
 
 import (
 	"context"
+	"github.com/pingcap/tidb/util/rowcodec"
 
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/parser/model"
@@ -143,7 +144,7 @@ func (e *PointGetExecutor) Next(ctx context.Context, req *chunk.Chunk) error {
 		}
 		return nil
 	}
-	return decodeRowValToChunk(e.base(), e.tblInfo, e.handle, val, req)
+	return decodeRowValToChunk2(e.base(), e.tblInfo, e.handle, val, req)
 }
 
 func (e *PointGetExecutor) lockKeyIfNeeded(ctx context.Context, key []byte) error {
@@ -192,6 +193,33 @@ func encodeIndexKey(e *baseExecutor, tblInfo *model.TableInfo, idxInfo *model.In
 		return nil, err
 	}
 	return tablecodec.EncodeIndexSeekKey(tblInfo.ID, idxInfo.ID, encodedIdxVals), nil
+}
+
+func decodeRowValToChunk2(e *baseExecutor, tblInfo *model.TableInfo, handle int64, rowVal []byte, chk *chunk.Chunk) error {
+	reqCols := make([]int64, len(e.schema.Columns))
+	handleColID := int64(-1)
+	tps := make([]*types.FieldType, len(e.schema.Columns))
+	defs := make([]*types.Datum, len(e.schema.Columns))
+	for i, col := range e.schema.Columns {
+		if (tblInfo.PKIsHandle && mysql.HasPriKeyFlag(col.RetType.Flag)) || col.ID == model.ExtraHandleID {
+			handleColID = col.ID
+		}
+		reqCols[i] = col.ID
+		tps[i] = col.RetType
+		colInfo := getColInfoByID(tblInfo, col.ID)
+		if colInfo == nil {
+			continue
+		}
+		d, err1 := table.GetColOriginDefaultValue(e.ctx, colInfo)
+		if err1 == nil {
+			defs[i] = &d
+		}
+	}
+	rd, err := rowcodec.NewDecoderWithDatumDefault(reqCols, handleColID, tps, defs, e.ctx.GetSessionVars().StmtCtx)
+	if err != nil {
+		return err
+	}
+	return rd.Decode(rowVal, handle, chk)
 }
 
 func decodeRowValToChunk(e *baseExecutor, tblInfo *model.TableInfo, handle int64, rowVal []byte, chk *chunk.Chunk) error {

@@ -182,7 +182,7 @@ func encodeDatum(buf []byte, d types.Datum, sc *stmtctx.StatementContext) ([]byt
 		t := d.GetMysqlTime()
 		// Encoding timestamp need to consider timezone.
 		// If it's not in UTC, transform to UTC first.
-		if t.Type == mysql.TypeTimestamp && sc.TimeZone != time.UTC {
+		if t.Type == mysql.TypeTimestamp && sc != nil && sc.TimeZone != time.UTC {
 			err := t.ConvertTimeZone(sc.TimeZone, time.UTC)
 			if err != nil {
 				return nil, errors.Trace(err)
@@ -209,6 +209,8 @@ func encodeDatum(buf []byte, d types.Datum, sc *stmtctx.StatementContext) ([]byt
 		j := d.GetMysqlJSON()
 		buf = append(buf, j.TypeCode)
 		buf = append(buf, j.Value...)
+	case types.KindNull:
+		buf = nil
 	default:
 		return nil, errors.Errorf("unsupport encode type %d", d.Kind())
 	}
