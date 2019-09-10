@@ -14,6 +14,7 @@
 package decoder
 
 import (
+	"github.com/pingcap/tidb/util/rowcodec"
 	"sort"
 	"time"
 
@@ -77,7 +78,10 @@ func NewRowDecoder(tbl table.Table, decodeColMap map[int64]Column) *RowDecoder {
 
 // DecodeAndEvalRowWithMap decodes a byte slice into datums and evaluates the generated column value.
 func (rd *RowDecoder) DecodeAndEvalRowWithMap(ctx sessionctx.Context, handle int64, b []byte, decodeLoc, sysLoc *time.Location, row map[int64]types.Datum) (map[int64]types.Datum, error) {
-	row, err := tablecodec.DecodeRowWithMap(b, rd.colTypes, decodeLoc, row)
+	row, err := tablecodec.DecodeRowWithMapNew(b, rd.colTypes, decodeLoc, row)
+	if err == rowcodec.ErrInvalidCodecVer {
+		row, err = tablecodec.DecodeRowWithMap(b, rd.colTypes, decodeLoc, row)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -42,16 +42,19 @@ type Decoder struct {
 // the origDefault will be used.
 func NewDecoder(requestColIDs []int64, handleColID int64, tps []*types.FieldType, origDefaults [][]byte,
 	sc *stmtctx.StatementContext) (*Decoder, error) {
-	xOrigDefaultVals := make([][]byte, len(origDefaults))
-	for i := 0; i < len(origDefaults); i++ {
-		if len(origDefaults[i]) == 0 {
-			continue
+	var xOrigDefaultVals [][]byte
+	if origDefaults != nil {
+		xOrigDefaultVals = make([][]byte, len(origDefaults))
+		for i := 0; i < len(origDefaults); i++ {
+			if len(origDefaults[i]) == 0 {
+				continue
+			}
+			xDefaultVal, err := convertDefaultValue(origDefaults[i], sc)
+			if err != nil {
+				return nil, err
+			}
+			xOrigDefaultVals[i] = xDefaultVal
 		}
-		xDefaultVal, err := convertDefaultValue(origDefaults[i], sc)
-		if err != nil {
-			return nil, err
-		}
-		xOrigDefaultVals[i] = xDefaultVal
 	}
 	var tz *time.Location
 	if sc != nil {
@@ -192,13 +195,79 @@ func (decoder *Decoder) DecodeBytes(rowData []byte, handle int64, unsignedHandle
 				break
 			}
 		}
-		if found || decoder.origDefaults[colIdx] == nil {
+		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
 			values[colIdx] = []byte{codec.NilFlag}
 		} else {
 			values[colIdx] = decoder.origDefaults[colIdx]
 		}
 	}
 	return values, nil
+}
+
+func (decoder *Decoder) DecodeDatums(rowData []byte, row map[int64]types.Datum) (map[int64]types.Datum, error) {
+	err := decoder.setRowData(rowData)
+	if err != nil {
+		return nil, err
+	}
+	for colIdx, colID := range decoder.requestColIDs {
+		if colID == decoder.handleColID {
+			continue
+		}
+		// Search the column in not-null columns array.
+		i, j := 0, int(decoder.numNotNullCols)
+		var found bool
+		for i < j {
+			h := int(uint(i+j) >> 1) // avoid overflow when computing h
+			// i ≤ h < j
+			var v int64
+			if decoder.isLarge {
+				v = int64(decoder.colIDs32[h])
+			} else {
+				v = int64(decoder.colIDs[h])
+			}
+			if v < colID {
+				i = h + 1
+			} else if v > colID {
+				j = h
+			} else {
+				found = true
+				colData := decoder.getData(h)
+				datum, err := decoder.decodeColDatum(colIdx, colData)
+				if err != nil {
+					return nil, err
+				}
+				row[colID] = datum
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		// Search the column in null columns array.
+		i, j = int(decoder.numNotNullCols), int(decoder.numNotNullCols+decoder.numNullCols)
+		for i < j {
+			h := int(uint(i+j) >> 1) // avoid overflow when computing h
+			// i ≤ h < j
+			var v int64
+			if decoder.isLarge {
+				v = int64(decoder.colIDs32[h])
+			} else {
+				v = int64(decoder.colIDs[h])
+			}
+			if v < colID {
+				i = h + 1
+			} else if v > colID {
+				j = h
+			} else {
+				found = true
+				break
+			}
+		}
+		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
+			row[colID] = types.NewDatum(nil)
+		}
+	}
+	return row, nil
 }
 
 // Decode decodes a row to chunk.
@@ -261,7 +330,7 @@ func (decoder *Decoder) Decode(rowData []byte, handle int64, chk *chunk.Chunk) e
 				break
 			}
 		}
-		if found || decoder.origDefaults[colIdx] == nil {
+		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
 			chk.AppendNull(colIdx)
 		} else {
 			err := decoder.decodeColData(colIdx, decoder.origDefaults[colIdx], chk)
