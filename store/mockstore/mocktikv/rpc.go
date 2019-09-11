@@ -91,6 +91,8 @@ func convertToKeyError(err error) *kvrpcpb.KeyError {
 			Retryable: retryable.Error(),
 		}
 	}
+	xx := fmt.Sprintf("%+v", err)
+	fmt.Println(xx)
 	return &kvrpcpb.KeyError{
 		Abort: err.Error(),
 	}

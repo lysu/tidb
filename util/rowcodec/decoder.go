@@ -195,7 +195,7 @@ func (decoder *Decoder) DecodeBytes(rowData []byte, handle int64, unsignedHandle
 				break
 			}
 		}
-		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
+		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
 			values[colIdx] = []byte{codec.NilFlag}
 		} else {
 			values[colIdx] = decoder.origDefaults[colIdx]
@@ -263,7 +263,7 @@ func (decoder *Decoder) DecodeDatums(rowData []byte, row map[int64]types.Datum) 
 				break
 			}
 		}
-		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
+		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
 			row[colID] = types.NewDatum(nil)
 		}
 	}
@@ -330,7 +330,7 @@ func (decoder *Decoder) Decode(rowData []byte, handle int64, chk *chunk.Chunk) e
 				break
 			}
 		}
-		if found || decoder.origDefaults == nil || decoder.origDefaults[colIdx] == nil {
+		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
 			chk.AppendNull(colIdx)
 		} else {
 			err := decoder.decodeColData(colIdx, decoder.origDefaults[colIdx], chk)

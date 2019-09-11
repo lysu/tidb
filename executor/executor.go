@@ -1101,16 +1101,14 @@ func (e *TableScanExec) Next(ctx context.Context, req *chunk.Chunk) error {
 	}
 
 	mutableRow := chunk.MutRowFromTypes(retTypes(e))
-	appendChk := func(row []types.Datum, chk *chunk.Chunk) {
-		mutableRow.SetDatums(row...)
-		req.AppendRow(mutableRow.ToRow())
-	}
 	for req.NumRows() < req.Capacity() {
-		err := e.getRow(handle, req, appendChk)
+		row, err := e.getRow(handle)
 		if err != nil {
 			return err
 		}
 		e.seekHandle = handle + 1
+		mutableRow.SetDatums(row...)
+		req.AppendRow(mutableRow.ToRow())
 	}
 	return nil
 }
@@ -1154,12 +1152,16 @@ func (e *TableScanExec) nextHandle() (handle int64, found bool, err error) {
 	}
 }
 
-func (e *TableScanExec) getRow(handle int64, chk *chunk.Chunk, appendChk func(row []types.Datum, chk *chunk.Chunk)) error {
+func (e *TableScanExec) getRow(handle int64) ([]types.Datum, error) {
 	columns := make([]*table.Column, e.schema.Len())
 	for i, v := range e.columns {
 		columns[i] = table.ToColumn(v)
 	}
-	return e.t.RowWithCols(e.ctx, handle, columns, chk, appendChk)
+	row, err := e.t.RowWithCols(e.ctx, handle, columns)
+	if err != nil {
+		return nil, err
+	}
+	return row, nil
 }
 
 // Open implements the Executor Open interface.

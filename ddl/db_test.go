@@ -16,7 +16,6 @@ package ddl_test
 import (
 	"context"
 	"fmt"
-	"github.com/pingcap/tidb/util/chunk"
 	"io"
 	"math"
 	"math/rand"
@@ -2732,10 +2731,7 @@ func (s *testDBSuite4) TestAddColumn2(c *C) {
 	ctx := context.Background()
 	err = s.tk.Se.NewTxn(ctx)
 	c.Assert(err, IsNil)
-	var oldRow []types.Datum
-	err = writeOnlyTable.RowWithCols(s.tk.Se, 1, writeOnlyTable.WritableCols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		oldRow = row
-	})
+	oldRow, err := writeOnlyTable.RowWithCols(s.tk.Se, 1, writeOnlyTable.WritableCols())
 	c.Assert(err, IsNil)
 	c.Assert(len(oldRow), Equals, 3)
 	err = writeOnlyTable.RemoveRecord(s.tk.Se, 1, oldRow)

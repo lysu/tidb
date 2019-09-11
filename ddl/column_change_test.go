@@ -16,7 +16,6 @@ package ddl
 import (
 	"context"
 	"fmt"
-	"github.com/pingcap/tidb/util/chunk"
 	"sync"
 	"time"
 
@@ -249,10 +248,7 @@ func (s *testColumnChangeSuite) checkAddWriteOnly(ctx sessionctx.Context, d *ddl
 		return errors.Trace(err)
 	}
 	// This test is for RowWithCols when column state is StateWriteOnly.
-	var row []types.Datum
-	err = writeOnlyTable.RowWithCols(ctx, h, writeOnlyTable.WritableCols(), nil, func(r []types.Datum, chk *chunk.Chunk) {
-		row = r
-	})
+	row, err := writeOnlyTable.RowWithCols(ctx, h, writeOnlyTable.WritableCols())
 	if err != nil {
 		return errors.Trace(err)
 	}
@@ -322,10 +318,7 @@ func (s *testColumnChangeSuite) checkAddPublic(sctx sessionctx.Context, d *ddl, 
 		return errors.Trace(err)
 	}
 	// writeOnlyTable update t set c1 = 3 where c1 = 4
-	var oldRow []types.Datum
-	err = writeOnlyTable.RowWithCols(sctx, h, writeOnlyTable.WritableCols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		oldRow = row
-	})
+	oldRow, err := writeOnlyTable.RowWithCols(sctx, h, writeOnlyTable.WritableCols())
 	if err != nil {
 		return errors.Trace(err)
 	}

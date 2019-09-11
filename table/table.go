@@ -27,7 +27,6 @@ import (
 	"github.com/pingcap/tidb/meta/autoid"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/types"
-	"github.com/pingcap/tidb/util/chunk"
 )
 
 // Type , the type of table, store data in different ways.
@@ -123,7 +122,7 @@ type Table interface {
 	IterRecords(ctx sessionctx.Context, startKey kv.Key, cols []*Column, fn RecordIterFunc) error
 
 	// RowWithCols returns a row that contains the given cols.
-	RowWithCols(ctx sessionctx.Context, h int64, cols []*Column, chk *chunk.Chunk, appendChk func(row []types.Datum, chk *chunk.Chunk)) error
+	RowWithCols(ctx sessionctx.Context, h int64, cols []*Column) ([]types.Datum, error)
 
 	// Row returns a row for all columns.
 	Row(ctx sessionctx.Context, h int64) ([]types.Datum, error)

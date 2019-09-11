@@ -15,7 +15,6 @@ package ddl
 
 import (
 	"context"
-	"github.com/pingcap/tidb/util/chunk"
 	"reflect"
 	"sync"
 
@@ -172,10 +171,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 	c.Assert(err, IsNil)
 	err = ctx.NewTxn(context.Background())
 	c.Assert(err, IsNil)
-	var values []types.Datum
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err := t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 
 	c.Assert(values, HasLen, 4)
@@ -185,9 +181,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 	testCheckJobDone(c, s.d, job, false)
 
 	t = testGetTable(c, s.d, s.dbInfo.ID, tblInfo.ID)
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err = t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 
 	c.Assert(values, HasLen, 3)
@@ -197,9 +191,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 	testCheckJobDone(c, s.d, job, true)
 
 	t = testGetTable(c, s.d, s.dbInfo.ID, tblInfo.ID)
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err = t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 
 	c.Assert(values, HasLen, 4)
@@ -209,9 +201,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 	testCheckJobDone(c, s.d, job, true)
 
 	t = testGetTable(c, s.d, s.dbInfo.ID, tblInfo.ID)
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err = t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 
 	c.Assert(values, HasLen, 5)
@@ -236,9 +226,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 	c.Assert(cols[5].Offset, Equals, 5)
 	c.Assert(cols[5].Name.L, Equals, "c5")
 
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err = t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 
 	c.Assert(values, HasLen, 6)
@@ -250,9 +238,7 @@ func (s *testColumnSuite) TestColumn(c *C) {
 
 	t = testGetTable(c, s.d, s.dbInfo.ID, tblInfo.ID)
 
-	err = t.RowWithCols(ctx, h, t.Cols(), nil, func(row []types.Datum, chk *chunk.Chunk) {
-		values = row
-	})
+	values, err = t.RowWithCols(ctx, h, t.Cols())
 	c.Assert(err, IsNil)
 	c.Assert(values, HasLen, 5)
 	c.Assert(values[0].GetInt64(), Equals, int64(202))
