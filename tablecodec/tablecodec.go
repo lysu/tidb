@@ -253,6 +253,29 @@ func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, 
 	return rowcodec.NewEncoder(colIDs, sc).Encode(values, valBuf)
 }
 
+func EncodeOldRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, valBuf []byte, values []types.Datum) ([]byte, error) {
+	if len(row) != len(colIDs) {
+		return nil, errors.Errorf("EncodeRow error: data and columnID count not match %d vs %d", len(row), len(colIDs))
+	}
+	valBuf = valBuf[:0]
+	if values == nil {
+		values = make([]types.Datum, len(row)*2)
+	}
+	for i, c := range row {
+		id := colIDs[i]
+		values[2*i].SetInt64(id)
+		err := flatten(sc, c, &values[2*i+1])
+		if err != nil {
+			return valBuf, errors.Trace(err)
+		}
+	}
+	if len(values) == 0 {
+		// We could not set nil value into kv.
+		return append(valBuf, codec.NilFlag), nil
+	}
+	return codec.EncodeValue(sc, valBuf, values...)
+}
+
 func flatten(sc *stmtctx.StatementContext, data types.Datum, ret *types.Datum) error {
 	switch data.Kind() {
 	case types.KindMysqlTime:

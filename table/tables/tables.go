@@ -746,7 +746,7 @@ func (t *tableCommon) addInsertBinlog(ctx sessionctx.Context, h int64, row []typ
 	if err != nil {
 		return err
 	}
-	value, err := tablecodec.EncodeRow(ctx.GetSessionVars().StmtCtx, row, colIDs, nil, nil)
+	value, err := tablecodec.EncodeOldRow(ctx.GetSessionVars().StmtCtx, row, colIDs, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -757,11 +757,11 @@ func (t *tableCommon) addInsertBinlog(ctx sessionctx.Context, h int64, row []typ
 }
 
 func (t *tableCommon) addUpdateBinlog(ctx sessionctx.Context, oldRow, newRow []types.Datum, colIDs []int64) error {
-	old, err := tablecodec.EncodeRow(ctx.GetSessionVars().StmtCtx, oldRow, colIDs, nil, nil)
+	old, err := tablecodec.EncodeOldRow(ctx.GetSessionVars().StmtCtx, oldRow, colIDs, nil, nil)
 	if err != nil {
 		return err
 	}
-	newVal, err := tablecodec.EncodeRow(ctx.GetSessionVars().StmtCtx, newRow, colIDs, nil, nil)
+	newVal, err := tablecodec.EncodeOldRow(ctx.GetSessionVars().StmtCtx, newRow, colIDs, nil, nil)
 	if err != nil {
 		return err
 	}
@@ -773,7 +773,7 @@ func (t *tableCommon) addUpdateBinlog(ctx sessionctx.Context, oldRow, newRow []t
 }
 
 func (t *tableCommon) addDeleteBinlog(ctx sessionctx.Context, r []types.Datum, colIDs []int64) error {
-	data, err := tablecodec.EncodeRow(ctx.GetSessionVars().StmtCtx, r, colIDs, nil, nil)
+	data, err := tablecodec.EncodeOldRow(ctx.GetSessionVars().StmtCtx, r, colIDs, nil, nil)
 	if err != nil {
 		return err
 	}
