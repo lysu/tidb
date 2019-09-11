@@ -201,7 +201,8 @@ func decodeRowValToChunk2(e *baseExecutor, tblInfo *model.TableInfo, handle int6
 	tps := make([]*types.FieldType, len(e.schema.Columns))
 	defs := make([]*types.Datum, len(e.schema.Columns))
 	for i, col := range e.schema.Columns {
-		if (tblInfo.PKIsHandle && mysql.HasPriKeyFlag(col.RetType.Flag)) || col.ID == model.ExtraHandleID {
+		isPK := (tblInfo.PKIsHandle && mysql.HasPriKeyFlag(col.RetType.Flag)) || col.ID == model.ExtraHandleID
+		if isPK {
 			handleColID = col.ID
 		}
 		reqCols[i] = col.ID
@@ -210,9 +211,11 @@ func decodeRowValToChunk2(e *baseExecutor, tblInfo *model.TableInfo, handle int6
 		if colInfo == nil {
 			continue
 		}
-		d, err1 := table.GetColOriginDefaultValue(e.ctx, colInfo)
-		if err1 == nil {
-			defs[i] = &d
+		if !isPK {
+			d, err1 := table.GetColOriginDefaultValue(e.ctx, colInfo)
+			if err1 == nil {
+				defs[i] = &d
+			}
 		}
 	}
 	rd, err := rowcodec.NewDecoderWithDatumDefault(reqCols, handleColID, tps, defs, e.ctx.GetSessionVars().StmtCtx)
