@@ -27,6 +27,7 @@ import (
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/codec"
+	"github.com/pingcap/tidb/util/rowcodec"
 )
 
 type memIndexReader struct {
@@ -201,20 +202,45 @@ func (m *memTableReader) decodeRecordKeyValue(key, value []byte) ([]types.Datum,
 
 // decodeRowData uses to decode row data value.
 func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, cacheBytes, value []byte) ([]types.Datum, error) {
-	values, err := getRowData(ctx.GetSessionVars().StmtCtx, tb, columns, colIDs, handle, cacheBytes, value)
+	return getRowData2(ctx.GetSessionVars().StmtCtx, tb, columns, colIDs, handle, cacheBytes, value)
+}
+
+func getRowData2(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, cacheBytes, value []byte) ([]types.Datum, error) {
+	pkIsHandle := tb.PKIsHandle
+	reqCols := make([]int64, len(columns))
+	handleCol := int64(-1)
+	tps := make([]*types.FieldType, len(columns))
+	unsignedHandle := false
+
+	for i, col := range columns {
+		id := col.ID
+		if (pkIsHandle && mysql.HasPriKeyFlag(col.Flag)) || id == model.ExtraHandleID {
+			handleCol = id
+			unsignedHandle = mysql.HasUnsignedFlag(uint(col.Flag))
+		}
+		reqCols[i] = id
+		tps[i] = fieldTypeFromColumn(col)
+	}
+	rd, err := rowcodec.NewDecoderWithDatumDefault(reqCols, handleCol, tps, nil, nil)
 	if err != nil {
 		return nil, err
 	}
-	ds := make([]types.Datum, 0, len(columns))
-	for _, col := range columns {
-		offset := colIDs[col.ID]
-		d, err := tablecodec.DecodeColumnValue(values[offset], &col.FieldType, ctx.GetSessionVars().TimeZone)
-		if err != nil {
-			return nil, err
-		}
-		ds = append(ds, d)
+	ds, err := rd.DecodeDatums(value, handle, unsignedHandle)
+	if err != nil {
+		return nil, err
 	}
 	return ds, nil
+}
+
+func fieldTypeFromColumn(col *model.ColumnInfo) *types.FieldType {
+	return &types.FieldType{
+		Tp:      col.Tp,
+		Flag:    col.Flag,
+		Flen:    col.Flen,
+		Decimal: col.Decimal,
+		Elems:   col.Elems,
+		Collate: col.Collate,
+	}
 }
 
 // getRowData decodes raw byte slice to row data.

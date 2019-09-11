@@ -250,10 +250,6 @@ func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, 
 			return valBuf, errors.Trace(err)
 		}
 	}
-	if len(values) == 0 {
-		// We could not set nil value into kv.
-		return append(valBuf, codec.NilFlag), nil
-	}
 	return rowcodec.NewEncoder(colIDs, sc).Encode(values, valBuf)
 }
 
@@ -332,7 +328,7 @@ func DecodeRowWithMapNew(b []byte, cols map[int64]*types.FieldType, loc *time.Lo
 		return nil, err
 	}
 
-	return rd.DecodeDatums(b, row)
+	return rd.DecodeDatumMap(b, row)
 }
 
 // DecodeRowWithMap decodes a byte slice into datums with a existing row map.

@@ -197,14 +197,95 @@ func (decoder *Decoder) DecodeBytes(rowData []byte, handle int64, unsignedHandle
 		}
 		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
 			values[colIdx] = []byte{codec.NilFlag}
-		} else {
+		} else if len(decoder.origDefaults) != 0 {
 			values[colIdx] = decoder.origDefaults[colIdx]
 		}
 	}
 	return values, nil
 }
 
-func (decoder *Decoder) DecodeDatums(rowData []byte, row map[int64]types.Datum) (map[int64]types.Datum, error) {
+func (decoder *Decoder) DecodeDatums(rowData []byte, handle int64, unsignedHandle bool) ([]types.Datum, error) {
+	err := decoder.setRowData(rowData)
+	if err != nil {
+		return nil, err
+	}
+	ds := make([]types.Datum, len(decoder.requestColIDs))
+	for colIdx, colID := range decoder.requestColIDs {
+		if colID == decoder.handleColID {
+			var handleDatum types.Datum
+			if unsignedHandle {
+				// PK column is Unsigned.
+				handleDatum = types.NewUintDatum(uint64(handle))
+			} else {
+				handleDatum = types.NewIntDatum(handle)
+			}
+			ds[colIdx] = handleDatum
+			continue
+		}
+		// Search the column in not-null columns array.
+		i, j := 0, int(decoder.numNotNullCols)
+		var found bool
+		for i < j {
+			h := int(uint(i+j) >> 1) // avoid overflow when computing h
+			// i ≤ h < j
+			var v int64
+			if decoder.isLarge {
+				v = int64(decoder.colIDs32[h])
+			} else {
+				v = int64(decoder.colIDs[h])
+			}
+			if v < colID {
+				i = h + 1
+			} else if v > colID {
+				j = h
+			} else {
+				found = true
+				colData := decoder.getData(h)
+				datum, err := decoder.decodeColDatum(colIdx, colData)
+				if err != nil {
+					return nil, err
+				}
+				ds[colIdx] = datum
+				break
+			}
+		}
+		if found {
+			continue
+		}
+		// Search the column in null columns array.
+		i, j = int(decoder.numNotNullCols), int(decoder.numNotNullCols+decoder.numNullCols)
+		for i < j {
+			h := int(uint(i+j) >> 1) // avoid overflow when computing h
+			// i ≤ h < j
+			var v int64
+			if decoder.isLarge {
+				v = int64(decoder.colIDs32[h])
+			} else {
+				v = int64(decoder.colIDs[h])
+			}
+			if v < colID {
+				i = h + 1
+			} else if v > colID {
+				j = h
+			} else {
+				found = true
+				break
+			}
+		}
+		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
+			ds[colIdx] = types.NewDatum(nil)
+		} else if len(decoder.origDefaults) != 0 {
+			datum, err := decoder.decodeColDatum(colIdx, decoder.origDefaults[colIdx])
+			if err != nil {
+				return nil, err
+			}
+			ds[colIdx] = datum
+		}
+	}
+	return ds, nil
+}
+
+func (decoder *Decoder) DecodeDatumMap(rowData []byte, row map[int64]types.Datum) (map[int64]types.Datum, error) {
 	err := decoder.setRowData(rowData)
 	if err != nil {
 		return nil, err
@@ -332,7 +413,7 @@ func (decoder *Decoder) Decode(rowData []byte, handle int64, chk *chunk.Chunk) e
 		}
 		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
 			chk.AppendNull(colIdx)
-		} else {
+		} else if len(decoder.origDefaults) != 0 {
 			err := decoder.decodeColData(colIdx, decoder.origDefaults[colIdx], chk)
 			if err != nil {
 				return err
