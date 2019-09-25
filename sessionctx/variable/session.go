@@ -1066,7 +1066,6 @@ type SlowQueryLogItems struct {
 	Prepared       bool
 	HasMoreResults bool
 	PrevStmt       string
-	Plan           string
 }
 
 // SlowLogFormat uses for formatting slow log.
@@ -1170,9 +1169,6 @@ func (s *SessionVars) SlowLogFormat(logItems *SlowQueryLogItems) string {
 	writeSlowLogItem(&buf, SlowLogPrepared, strconv.FormatBool(logItems.Prepared))
 	writeSlowLogItem(&buf, SlowLogHasMoreResults, strconv.FormatBool(logItems.HasMoreResults))
 	writeSlowLogItem(&buf, SlowLogSucc, strconv.FormatBool(logItems.Succ))
-	if len(logItems.Plan) != 0 {
-		writeSlowLogItem(&buf, SlowLogPlan, logItems.Plan)
-	}
 
 	if logItems.PrevStmt != "" {
 		writeSlowLogItem(&buf, SlowLogPrevStmt, logItems.PrevStmt)

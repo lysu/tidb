@@ -687,7 +687,6 @@ func (a *ExecStmt) LogSlowQuery(txnTS uint64, succ bool, hasMoreResults bool) {
 		ExecDetail:     execDetail,
 		MemMax:         memMax,
 		Succ:           succ,
-		Plan:           getPlanTree(a.Plan),
 		Prepared:       a.isPreparedStmt,
 		HasMoreResults: hasMoreResults,
 	}
