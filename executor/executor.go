@@ -1161,6 +1161,7 @@ func (e *TableScanExec) getRow(handle int64) ([]types.Datum, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return row, nil
 }
 

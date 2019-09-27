@@ -411,12 +411,14 @@ func (decoder *Decoder) Decode(rowData []byte, handle int64, chk *chunk.Chunk) e
 				break
 			}
 		}
-		if found || (len(decoder.origDefaults) != 0 && decoder.origDefaults[colIdx] == nil) {
-			chk.AppendNull(colIdx)
-		} else if len(decoder.origDefaults) != 0 {
-			err := decoder.decodeColData(colIdx, decoder.origDefaults[colIdx], chk)
-			if err != nil {
-				return err
+		if len(decoder.origDefaults) > 0 {
+			if found || decoder.origDefaults[colIdx] == nil {
+				chk.AppendNull(colIdx)
+			} else {
+				err := decoder.decodeColData(colIdx, decoder.origDefaults[colIdx], chk)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}

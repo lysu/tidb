@@ -1967,13 +1967,13 @@ func (it *infoschemaTable) IterRecords(ctx sessionctx.Context, startKey kv.Key, 
 	return nil
 }
 
-// Row implements table.Table Row interface.
-func (it *infoschemaTable) Row(ctx sessionctx.Context, h int64) ([]types.Datum, error) {
+// RowWithCols implements table.Table RowWithCols interface.
+func (it *infoschemaTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column) ([]types.Datum, error) {
 	return nil, table.ErrUnsupportedOp
 }
 
-// RowWithCols2 implements table.Table RowWithCols interface.
-func (it *infoschemaTable) RowWithCols(ctx sessionctx.Context, h int64, cols []*table.Column) ([]types.Datum, error) {
+// Row implements table.Table Row interface.
+func (it *infoschemaTable) Row(ctx sessionctx.Context, h int64) ([]types.Datum, error) {
 	return nil, table.ErrUnsupportedOp
 }
 

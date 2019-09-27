@@ -15,7 +15,6 @@ package executor
 
 import (
 	"context"
-	"github.com/pingcap/tidb/util/rowcodec"
 
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/parser/model"
@@ -29,6 +28,7 @@ import (
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/codec"
 	"github.com/pingcap/tidb/util/ranger"
+	"github.com/pingcap/tidb/util/rowcodec"
 )
 
 func (b *executorBuilder) buildPointGet(p *plannercore.PointGetPlan) Executor {

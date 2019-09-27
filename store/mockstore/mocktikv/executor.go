@@ -16,7 +16,6 @@ package mocktikv
 import (
 	"bytes"
 	"context"
-	"github.com/pingcap/tidb/util/rowcodec"
 	"sort"
 	"time"
 
@@ -31,6 +30,7 @@ import (
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/codec"
+	"github.com/pingcap/tidb/util/rowcodec"
 	"github.com/pingcap/tipb/go-tipb"
 )
 
