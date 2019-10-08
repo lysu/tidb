@@ -252,11 +252,22 @@ func (c *CMSketch) subValue(h1, h2 uint64, count uint64) {
 }
 
 func (c *CMSketch) queryValue(sc *stmtctx.StatementContext, val types.Datum) (uint64, error) {
+	// try old-row-format first.
 	bytes, err := tablecodec.EncodeValue(sc, nil, val)
 	if err != nil {
 		return 0, errors.Trace(err)
 	}
-	return c.QueryBytes(bytes), nil
+	cnt := c.QueryBytes(bytes)
+	if cnt > 0 {
+		return cnt, nil
+	}
+
+	// try new-row-format column.
+	bb, err := tablecodec.EncodeNewValue(sc, nil, val)
+	if err != nil {
+		return 0, err
+	}
+	return c.QueryBytes(bb), nil
 }
 
 // QueryBytes is used to query the count of specified bytes.

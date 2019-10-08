@@ -231,6 +231,16 @@ func EncodeValue(sc *stmtctx.StatementContext, b []byte, raw types.Datum) ([]byt
 	return codec.EncodeValue(sc, b, v)
 }
 
+// EncodeValue encodes a go value to bytes as new row format.
+func EncodeNewValue(sc *stmtctx.StatementContext, b []byte, raw types.Datum) ([]byte, error) {
+	var v types.Datum
+	err := flatten(sc, raw, &v)
+	if err != nil {
+		return nil, err
+	}
+	return codec.EncodeKey(sc, b, v)
+}
+
 // EncodeRow encode row data and column ids into a slice of byte.
 // Row layout: colID1, value1, colID2, value2, .....
 // valBuf and values pass by caller, for reducing EncodeRow allocates temporary bufs. If you pass valBuf and values as nil,
