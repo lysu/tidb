@@ -250,7 +250,8 @@ func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, 
 			return valBuf, errors.Trace(err)
 		}
 	}
-	return rowcodec.NewEncoder(colIDs, sc).Encode(values, valBuf)
+	var e rowcodec.Encoder
+	return e.Encode(colIDs, values, valBuf)
 }
 
 func EncodeOldRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, valBuf []byte, values []types.Datum) ([]byte, error) {
@@ -340,18 +341,15 @@ func DecodeRowWithMapNew(b []byte, cols map[int64]*types.FieldType, loc *time.Lo
 
 	reqCols := make([]int64, 0, len(cols))
 	tps := make([]*types.FieldType, 0, len(cols))
-	sc := new(stmtctx.StatementContext)
-	sc.TimeZone = loc
 	for id, tp := range cols {
 		reqCols = append(reqCols, id)
 		tps = append(tps, tp)
 	}
-	rd, err := rowcodec.NewDecoderWithDatumDefault(reqCols, -1, tps, nil, sc)
+	rd, err := rowcodec.NewDecoder(reqCols, -1, tps, nil, loc)
 	if err != nil {
 		return nil, err
 	}
-
-	return rd.DecodeDatumMap(b, row)
+	return rd.DecodeToOldDatumMap(b, -1, row)
 }
 
 // DecodeRowWithMap decodes a byte slice into datums with a existing row map.
