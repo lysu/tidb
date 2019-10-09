@@ -243,17 +243,9 @@ func (decoder *Decoder) decodeColData(colIdx int, colData []byte, chk *chunk.Chu
 			chk.AppendInt64(colIdx, decodeInt(colData))
 		}
 	case mysql.TypeFloat:
-		_, fVal, err := codec.DecodeFloat(colData)
-		if err != nil {
-			return err
-		}
-		chk.AppendFloat32(colIdx, float32(fVal))
+		chk.AppendFloat32(colIdx, float32(math.Float64frombits(decodeUint(colData))))
 	case mysql.TypeDouble:
-		_, fVal, err := codec.DecodeFloat(colData)
-		if err != nil {
-			return err
-		}
-		chk.AppendFloat64(colIdx, fVal)
+		chk.AppendFloat64(colIdx, math.Float64frombits(decodeUint(colData)))
 	case mysql.TypeVarString, mysql.TypeVarchar, mysql.TypeString,
 		mysql.TypeBlob, mysql.TypeTinyBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob:
 		chk.AppendBytes(colIdx, colData)
@@ -321,17 +313,9 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 			d.SetInt64(decodeInt(colData))
 		}
 	case mysql.TypeFloat:
-		_, fVal, err := codec.DecodeFloat(colData)
-		if err != nil {
-			return nil, err
-		}
-		d.SetFloat32(float32(fVal))
+		d.SetFloat32(float32(math.Float64frombits(decodeUint(colData))))
 	case mysql.TypeDouble:
-		_, fVal, err := codec.DecodeFloat(colData)
-		if err != nil {
-			return nil, err
-		}
-		d.SetFloat64(fVal)
+		d.SetFloat64(math.Float64frombits(decodeUint(colData)))
 	case mysql.TypeVarString, mysql.TypeVarchar, mysql.TypeString,
 		mysql.TypeBlob, mysql.TypeTinyBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob:
 		d.SetBytes(colData)
