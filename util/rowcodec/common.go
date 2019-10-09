@@ -1,3 +1,16 @@
+// Copyright 2019 PingCAP, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package rowcodec
 
 import (
@@ -7,39 +20,32 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/juju/errors"
+	"github.com/pingcap/errors"
+	"github.com/pingcap/tidb/util/codec"
 )
 
 // CodecVer is the constant number that represent the new row format.
 const CodecVer = 128
 
+// ErrInvalidCodecVer indicates row format not match to new version.
 var ErrInvalidCodecVer = errors.New("invalid codec version")
 
-// First byte in the encoded value which specifies the encoding type.
-const (
-	NilFlag          byte = 0
-	BytesFlag        byte = 1
-	CompactBytesFlag byte = 2
-	IntFlag          byte = 3
-	UintFlag         byte = 4
-	VarintFlag       byte = 8
-	VaruintFlag      byte = 9
-)
-
-// row is the struct type used to access the a row.
+// row is the struct type used to access a row.
+// There are two types of row, small and large.
+// A small row takes one byte colID and two bytes offset, optimized for most cases.
+// If the max colID is larger than 255 or total value size is larger than 65535, the row type would be large.
+// A large row takes four bytes colID and four bytes offset.
 type row struct {
-	// small:  colID []byte, offsets []uint16, optimized for most cases.
-	// large:  colID []uint32, offsets []uint32.
-	large          bool
+	isLarge        bool
 	numNotNullCols uint16
 	numNullCols    uint16
-	colIDs         []byte
+	data           []byte
 
-	// valFlags is used for converting new row format to old row format.
-	// It can be removed once TiDB implemented the new row format.
 	valFlags []byte
-	offsets  []uint16
-	data     []byte
+
+	// for small rows
+	colIDs  []byte
+	offsets []uint16
 
 	// for large row
 	colIDs32  []uint32
@@ -51,7 +57,7 @@ func (r row) String() string {
 	var colValStrs []string
 	for i := 0; i < int(r.numNotNullCols); i++ {
 		var colID, offStart, offEnd int64
-		if r.large {
+		if r.isLarge {
 			colID = int64(r.colIDs32[i])
 			if i != 0 {
 				offStart = int64(r.offsets32[i-1])
@@ -67,7 +73,7 @@ func (r row) String() string {
 		colValData := r.data[offStart:offEnd]
 		valFlag := r.valFlags[i]
 		var colValStr string
-		if valFlag == BytesFlag {
+		if valFlag == codec.BytesFlag {
 			colValStr = fmt.Sprintf("(%d:'%s')", colID, colValData)
 		} else {
 			colValStr = fmt.Sprintf("(%d:%d)", colID, colValData)
@@ -79,7 +85,7 @@ func (r row) String() string {
 
 func (r *row) getData(i int) []byte {
 	var start, end uint32
-	if r.large {
+	if r.isLarge {
 		if i > 0 {
 			start = r.offsets32[i-1]
 		}
@@ -97,13 +103,13 @@ func (r *row) setRowData(rowData []byte) error {
 	if rowData[0] != CodecVer {
 		return ErrInvalidCodecVer
 	}
-	r.large = rowData[1]&1 > 0
+	r.isLarge = rowData[1]&1 > 0
 	r.numNotNullCols = binary.LittleEndian.Uint16(rowData[2:])
 	r.numNullCols = binary.LittleEndian.Uint16(rowData[4:])
 	cursor := 6
 	r.valFlags = rowData[cursor : cursor+int(r.numNotNullCols)]
 	cursor += int(r.numNotNullCols)
-	if r.large {
+	if r.isLarge {
 		colIDsLen := int(r.numNotNullCols+r.numNullCols) * 4
 		r.colIDs32 = bytesToU32Slice(rowData[cursor : cursor+colIDsLen])
 		cursor += colIDsLen

@@ -33,15 +33,15 @@ import (
 // First byte in the encoded value which specifies the encoding type.
 const (
 	NilFlag          byte = 0
-	bytesFlag        byte = 1
-	compactBytesFlag byte = 2
-	intFlag          byte = 3
-	uintFlag         byte = 4
+	BytesFlag        byte = 1
+	CompactBytesFlag byte = 2
+	IntFlag          byte = 3
+	UintFlag         byte = 4
 	floatFlag        byte = 5
 	decimalFlag      byte = 6
 	durationFlag     byte = 7
-	varintFlag       byte = 8
-	uvarintFlag      byte = 9
+	VarintFlag       byte = 8
+	UvarintFlag      byte = 9
 	jsonFlag         byte = 10
 	maxFlag          byte = 250
 )
@@ -90,7 +90,7 @@ func encode(sc *stmtctx.StatementContext, b []byte, vals []types.Datum, comparab
 		case types.KindString, types.KindBytes:
 			b = encodeBytes(b, vals[i].GetBytes(), comparable)
 		case types.KindMysqlTime:
-			b = append(b, uintFlag)
+			b = append(b, UintFlag)
 			b, err = EncodeMySQLTime(sc, vals[i], mysql.TypeUnspecified, b)
 			if err != nil {
 				return b, err
@@ -125,7 +125,7 @@ func encode(sc *stmtctx.StatementContext, b []byte, vals []types.Datum, comparab
 		case types.KindNull:
 			b = append(b, NilFlag)
 		case types.KindMinNotNull:
-			b = append(b, bytesFlag)
+			b = append(b, BytesFlag)
 		case types.KindMaxValue:
 			b = append(b, maxFlag)
 		default:
@@ -193,10 +193,10 @@ func EncodeMySQLTime(sc *stmtctx.StatementContext, d types.Datum, tp byte, b []b
 
 func encodeBytes(b []byte, v []byte, comparable bool) []byte {
 	if comparable {
-		b = append(b, bytesFlag)
+		b = append(b, BytesFlag)
 		b = EncodeBytes(b, v)
 	} else {
-		b = append(b, compactBytesFlag)
+		b = append(b, CompactBytesFlag)
 		b = EncodeCompactBytes(b, v)
 	}
 	return b
@@ -217,10 +217,10 @@ func sizeBytes(v []byte, comparable bool) int {
 
 func encodeSignedInt(b []byte, v int64, comparable bool) []byte {
 	if comparable {
-		b = append(b, intFlag)
+		b = append(b, IntFlag)
 		b = EncodeInt(b, v)
 	} else {
-		b = append(b, varintFlag)
+		b = append(b, VarintFlag)
 		b = EncodeVarint(b, v)
 	}
 	return b
@@ -242,10 +242,10 @@ func valueSizeOfSignedInt(v int64) int {
 
 func encodeUnsignedInt(b []byte, v uint64, comparable bool) []byte {
 	if comparable {
-		b = append(b, uintFlag)
+		b = append(b, UintFlag)
 		b = EncodeUint(b, v)
 	} else {
-		b = append(b, uvarintFlag)
+		b = append(b, UvarintFlag)
 		b = EncodeUvarint(b, v)
 	}
 	return b
@@ -289,10 +289,10 @@ func encodeHashChunkRowIdx(sc *stmtctx.StatementContext, row chunk.Row, tp *type
 	}
 	switch tp.Tp {
 	case mysql.TypeTiny, mysql.TypeShort, mysql.TypeInt24, mysql.TypeLong, mysql.TypeLonglong, mysql.TypeYear:
-		flag = varintFlag
+		flag = VarintFlag
 		if mysql.HasUnsignedFlag(tp.Flag) {
 			if integer := row.GetInt64(idx); integer < 0 {
-				flag = uvarintFlag
+				flag = UvarintFlag
 			}
 		}
 		b = row.GetRaw(idx)
@@ -304,10 +304,10 @@ func encodeHashChunkRowIdx(sc *stmtctx.StatementContext, row chunk.Row, tp *type
 		flag = floatFlag
 		b = row.GetRaw(idx)
 	case mysql.TypeVarchar, mysql.TypeVarString, mysql.TypeString, mysql.TypeBlob, mysql.TypeTinyBlob, mysql.TypeMediumBlob, mysql.TypeLongBlob:
-		flag = compactBytesFlag
+		flag = CompactBytesFlag
 		b = row.GetBytes(idx)
 	case mysql.TypeDate, mysql.TypeDatetime, mysql.TypeTimestamp:
-		flag = uintFlag
+		flag = UintFlag
 		t := row.GetTime(idx)
 		// Encoding timestamp need to consider timezone.
 		// If it's not in UTC, transform to UTC first.
@@ -336,16 +336,16 @@ func encodeHashChunkRowIdx(sc *stmtctx.StatementContext, row chunk.Row, tp *type
 			return
 		}
 	case mysql.TypeEnum:
-		flag = uvarintFlag
+		flag = UvarintFlag
 		v := uint64(row.GetEnum(idx).ToNumber())
 		b = (*[8]byte)(unsafe.Pointer(&v))[:]
 	case mysql.TypeSet:
-		flag = uvarintFlag
+		flag = UvarintFlag
 		v := uint64(row.GetSet(idx).ToNumber())
 		b = (*[unsafe.Sizeof(v)]byte)(unsafe.Pointer(&v))[:]
 	case mysql.TypeBit:
 		// We don't need to handle errors here since the literal is ensured to be able to store in uint64 in convertToMysqlBit.
-		flag = uvarintFlag
+		flag = UvarintFlag
 		v, err1 := types.BinaryLiteral(row.GetBytes(idx)).ToInt(sc)
 		terror.Log(errors.Trace(err1))
 		b = (*[unsafe.Sizeof(v)]byte)(unsafe.Pointer(&v))[:]
@@ -371,9 +371,9 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				buf[0], b = NilFlag, nil
 				isNull[i] = true
 			} else {
-				buf[0] = varintFlag
+				buf[0] = VarintFlag
 				if mysql.HasUnsignedFlag(tp.Flag) && v < 0 {
-					buf[0] = uvarintFlag
+					buf[0] = UvarintFlag
 				}
 				b = column.GetRaw(i)
 			}
@@ -422,7 +422,7 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				buf[0], b = NilFlag, nil
 				isNull[i] = true
 			} else {
-				buf[0] = compactBytesFlag
+				buf[0] = CompactBytesFlag
 				b = column.GetBytes(i)
 			}
 
@@ -438,7 +438,7 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				buf[0], b = NilFlag, nil
 				isNull[i] = true
 			} else {
-				buf[0] = uintFlag
+				buf[0] = UintFlag
 				// Encoding timestamp need to consider timezone.
 				// If it's not in UTC, transform to UTC first.
 				if t.Type == mysql.TypeTimestamp && sc.TimeZone != time.UTC {
@@ -502,7 +502,7 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				buf[0], b = NilFlag, nil
 				isNull[i] = true
 			} else {
-				buf[0] = uvarintFlag
+				buf[0] = UvarintFlag
 				v := uint64(column.GetEnum(i).ToNumber())
 				b = (*[sizeUint64]byte)(unsafe.Pointer(&v))[:]
 			}
@@ -518,7 +518,7 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				buf[0], b = NilFlag, nil
 				isNull[i] = true
 			} else {
-				buf[0] = uvarintFlag
+				buf[0] = UvarintFlag
 				v := uint64(column.GetSet(i).ToNumber())
 				b = (*[sizeUint64]byte)(unsafe.Pointer(&v))[:]
 			}
@@ -535,7 +535,7 @@ func HashChunkColumns(sc *stmtctx.StatementContext, h []hash.Hash64, chk *chunk.
 				isNull[i] = true
 			} else {
 				// We don't need to handle errors here since the literal is ensured to be able to store in uint64 in convertToMysqlBit.
-				buf[0] = uvarintFlag
+				buf[0] = UvarintFlag
 				v, err1 := types.BinaryLiteral(column.GetBytes(i)).ToInt(sc)
 				terror.Log(errors.Trace(err1))
 				b = (*[sizeUint64]byte)(unsafe.Pointer(&v))[:]
@@ -662,7 +662,7 @@ func DecodeRange(b []byte, size int) ([]types.Datum, []byte, error) {
 		switch b[0] {
 		case NilFlag:
 			values = append(values, types.Datum{})
-		case bytesFlag:
+		case BytesFlag:
 			values = append(values, types.MinNotNullDatum())
 		// `maxFlag + 1` for PrefixNext
 		case maxFlag, maxFlag + 1:
@@ -682,19 +682,19 @@ func DecodeOne(b []byte) (remain []byte, d types.Datum, err error) {
 	flag := b[0]
 	b = b[1:]
 	switch flag {
-	case intFlag:
+	case IntFlag:
 		var v int64
 		b, v, err = DecodeInt(b)
 		d.SetInt64(v)
-	case uintFlag:
+	case UintFlag:
 		var v uint64
 		b, v, err = DecodeUint(b)
 		d.SetUint64(v)
-	case varintFlag:
+	case VarintFlag:
 		var v int64
 		b, v, err = DecodeVarint(b)
 		d.SetInt64(v)
-	case uvarintFlag:
+	case UvarintFlag:
 		var v uint64
 		b, v, err = DecodeUvarint(b)
 		d.SetUint64(v)
@@ -702,11 +702,11 @@ func DecodeOne(b []byte) (remain []byte, d types.Datum, err error) {
 		var v float64
 		b, v, err = DecodeFloat(b)
 		d.SetFloat64(v)
-	case bytesFlag:
+	case BytesFlag:
 		var v []byte
 		b, v, err = DecodeBytes(b, nil)
 		d.SetBytes(v)
-	case compactBytesFlag:
+	case CompactBytesFlag:
 		var v []byte
 		b, v, err = DecodeCompactBytes(b)
 		d.SetBytes(v)
@@ -793,18 +793,18 @@ func peek(b []byte) (length int, err error) {
 	var l int
 	switch flag {
 	case NilFlag:
-	case intFlag, uintFlag, floatFlag, durationFlag:
+	case IntFlag, UintFlag, floatFlag, durationFlag:
 		// Those types are stored in 8 bytes.
 		l = 8
-	case bytesFlag:
+	case BytesFlag:
 		l, err = peekBytes(b)
-	case compactBytesFlag:
+	case CompactBytesFlag:
 		l, err = peekCompactBytes(b)
 	case decimalFlag:
 		l, err = types.DecimalPeak(b)
-	case varintFlag:
+	case VarintFlag:
 		l, err = peekVarint(b)
-	case uvarintFlag:
+	case UvarintFlag:
 		l, err = peekUvarint(b)
 	case jsonFlag:
 		l, err = json.PeekBytesAsJSON(b)
@@ -894,28 +894,28 @@ func (decoder *Decoder) DecodeOne(b []byte, colIdx int, ft *types.FieldType) (re
 	flag := b[0]
 	b = b[1:]
 	switch flag {
-	case intFlag:
+	case IntFlag:
 		var v int64
 		b, v, err = DecodeInt(b)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
 		appendIntToChunk(v, chk, colIdx, ft)
-	case uintFlag:
+	case UintFlag:
 		var v uint64
 		b, v, err = DecodeUint(b)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
 		err = appendUintToChunk(v, chk, colIdx, ft, decoder.timezone)
-	case varintFlag:
+	case VarintFlag:
 		var v int64
 		b, v, err = DecodeVarint(b)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
 		appendIntToChunk(v, chk, colIdx, ft)
-	case uvarintFlag:
+	case UvarintFlag:
 		var v uint64
 		b, v, err = DecodeUvarint(b)
 		if err != nil {
@@ -929,13 +929,13 @@ func (decoder *Decoder) DecodeOne(b []byte, colIdx int, ft *types.FieldType) (re
 			return nil, errors.Trace(err)
 		}
 		appendFloatToChunk(v, chk, colIdx, ft)
-	case bytesFlag:
+	case BytesFlag:
 		b, decoder.buf, err = DecodeBytes(b, decoder.buf)
 		if err != nil {
 			return nil, errors.Trace(err)
 		}
 		chk.AppendBytes(colIdx, decoder.buf)
-	case compactBytesFlag:
+	case CompactBytesFlag:
 		var v []byte
 		b, v, err = DecodeCompactBytes(b)
 		if err != nil {
