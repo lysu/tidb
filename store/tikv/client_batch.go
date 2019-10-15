@@ -254,7 +254,9 @@ func (c *batchCommandsClient) reCreateStreamingClientOnce(err error) error {
 
 	// Re-establish a application layer stream. TCP layer is handled by gRPC.
 	tikvClient := tikvpb.NewTikvClient(c.conn)
-	streamClient, err := tikvClient.BatchCommands(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+	streamClient, err := tikvClient.BatchCommands(ctx)
+	cancel()
 	if err == nil {
 		logutil.BgLogger().Info(
 			"batchRecvLoop re-create streaming success",
