@@ -16,6 +16,8 @@ package tikv
 
 import (
 	"context"
+	"fmt"
+	"go.uber.org/zap"
 	"io"
 	"math"
 	"strconv"
@@ -155,6 +157,15 @@ func (a *connArray) Init(addr string, security config.Security, idleNotify *uint
 }
 
 func (a *connArray) establishBatchClient(client config.TiKVClient) {
+	defer func() {
+		if r := recover(); r != nil {
+			logutil.BgLogger().Error("panic in the establishBatchClient goroutine",
+				zap.Reflect("r", r),
+				zap.Stack("stack trace"))
+			a.estError = errors.New(fmt.Sprintf("%v", r))
+		}
+		close(a.batchConn.estReady)
+	}()
 	for i := range a.v {
 		conn := a.v[i]
 		// Initialize batch streaming clients.
@@ -164,7 +175,6 @@ func (a *connArray) establishBatchClient(client config.TiKVClient) {
 		cancel()
 		if err != nil {
 			a.estError = errors.Trace(err)
-			close(a.batchConn.estReady)
 			return
 		}
 		batchClient := &batchCommandsClient{
@@ -178,7 +188,6 @@ func (a *connArray) establishBatchClient(client config.TiKVClient) {
 	go a.batchSendLoop(client)
 
 	atomic.StoreInt32(&a.estDone, 1)
-	close(a.batchConn.estReady)
 }
 
 func (a *connArray) Get() *grpc.ClientConn {
