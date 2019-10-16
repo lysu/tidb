@@ -61,6 +61,7 @@ func (s *testClientFailSuite) TestPanicInRecvLoop(c *C) {
 	c.Assert(err, IsNil)
 
 	<-conn.estReady
+	c.Assert(conn.estError, IsNil)
 
 	time.Sleep(time.Second)
 	c.Assert(failpoint.Disable("github.com/pingcap/tidb/store/tikv/gotErrorInRecvLoop"), IsNil)

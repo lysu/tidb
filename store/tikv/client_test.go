@@ -92,14 +92,13 @@ func (s *testClientSuite) TestRemoveCanceledRequests(c *C) {
 func (s *testClientSuite) TestCancelTimeoutRetErr(c *C) {
 	req := new(tikvpb.BatchCommandsRequest_Request)
 	a := newBatchConn(1, 1, nil)
-	connArray := &connArray{batchConn: a}
 
 	ctx, cancel := context.WithCancel(context.TODO())
 	cancel()
-	_, err := sendBatchRequest(ctx, "", connArray, req, 2*time.Second)
+	_, err := sendBatchRequest(ctx, "", a, req, 2*time.Second)
 	c.Assert(errors.Cause(err), Equals, context.Canceled)
 
-	_, err = sendBatchRequest(context.Background(), "", connArray, req, 0)
+	_, err = sendBatchRequest(context.Background(), "", a, req, 0)
 	c.Assert(errors.Cause(err), Equals, context.DeadlineExceeded)
 }
 
@@ -113,6 +112,7 @@ func (s *testClientSuite) TestSendWhenReconnect(c *C) {
 	c.Assert(err, IsNil)
 
 	<-conn.estReady
+	c.Assert(conn.estError, IsNil)
 
 	// Suppose all connections are re-establishing.
 	for _, client := range conn.batchConn.batchCommandsClients {
@@ -124,4 +124,12 @@ func (s *testClientSuite) TestSendWhenReconnect(c *C) {
 	c.Assert(err.Error() == "no available connections", IsTrue)
 	conn.Close()
 	server.Stop()
+}
+
+func (s *testClientFailSuite) TestSendUnknownHost(c *C) {
+	rpcClient := newRPCClient(config.Security{})
+	conn, err := rpcClient.getConnArray("182.16.5.31:10001")
+	c.Assert(err, IsNil)
+	<-conn.estReady
+	c.Assert(conn.estError, NotNil)
 }

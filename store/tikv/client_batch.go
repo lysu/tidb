@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
 )
 
 type batchConn struct {
@@ -249,22 +250,33 @@ func (c *batchCommandsClient) failPendingRequests(err error) {
 	})
 }
 
-func (c *batchCommandsClient) reCreateStreamingClientOnce(err error) error {
-	c.failPendingRequests(err) // fail all pending requests.
+func (c *batchCommandsClient) reCreateStreamingClientOnce(perr error) error {
+	c.failPendingRequests(perr) // fail all pending requests.
 
-	// Re-establish a application layer stream. TCP layer is handled by gRPC.
-	tikvClient := tikvpb.NewTikvClient(c.conn)
-	ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-	streamClient, err := tikvClient.BatchCommands(ctx)
-	cancel()
+	// wait Re-establish a application layer stream. TCP layer is handled by gRPC.
+	var err error
+	state := c.conn.GetState()
+	if state != connectivity.Ready {
+		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+		ready := c.conn.WaitForStateChange(ctx, state)
+		cancel()
+		if !ready {
+			err = ctx.Err()
+		}
+	}
+
 	if err == nil {
-		logutil.BgLogger().Info(
-			"batchRecvLoop re-create streaming success",
-			zap.String("target", c.target),
-		)
-		c.client = streamClient
-
-		return nil
+		tikvClient := tikvpb.NewTikvClient(c.conn)
+		var streamClient tikvpb.Tikv_BatchCommandsClient
+		streamClient, err = tikvClient.BatchCommands(context.Background())
+		if err == nil {
+			logutil.BgLogger().Info(
+				"batchRecvLoop re-create streaming success",
+				zap.String("target", c.target),
+			)
+			c.client = streamClient
+			return nil
+		}
 	}
 	logutil.BgLogger().Info(
 		"batchRecvLoop re-create streaming fail",
@@ -494,11 +506,10 @@ func removeCanceledRequests(entries []*batchCommandsEntry,
 func sendBatchRequest(
 	ctx context.Context,
 	addr string,
-	connArray *connArray,
+	batchConn *batchConn,
 	req *tikvpb.BatchCommandsRequest_Request,
 	timeout time.Duration,
 ) (*tikvrpc.Response, error) {
-	batchConn := connArray.batchConn
 	entry := &batchCommandsEntry{
 		ctx:      ctx,
 		req:      req,
@@ -513,7 +524,6 @@ func sendBatchRequest(
 		select {
 		case <-batchConn.estReady:
 			if batchConn.estError != nil {
-				connArray.Close()
 				return nil, batchConn.estError
 			}
 			break

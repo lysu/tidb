@@ -17,7 +17,6 @@ package tikv
 import (
 	"context"
 	"fmt"
-	"go.uber.org/zap"
 	"io"
 	"math"
 	"strconv"
@@ -36,6 +35,7 @@ import (
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 	"github.com/pingcap/tidb/util/logutil"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
@@ -164,15 +164,29 @@ func (a *connArray) establishBatchClient(client config.TiKVClient) {
 				zap.Stack("stack trace"))
 			a.estError = errors.New(fmt.Sprintf("%v", r))
 		}
+		if a.estError != nil {
+			a.Close()
+		}
 		close(a.batchConn.estReady)
 	}()
 	for i := range a.v {
 		conn := a.v[i]
+
+		// wait connection ready before create BatchClient
+		state := conn.GetState()
+		if state != connectivity.Ready {
+			ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
+			ready := conn.WaitForStateChange(ctx, state)
+			cancel()
+			if !ready {
+				a.estError = ctx.Err()
+				return
+			}
+		}
+
 		// Initialize batch streaming clients.
 		tikvClient := tikvpb.NewTikvClient(conn)
-		ctx, cancel := context.WithTimeout(context.Background(), dialTimeout)
-		streamClient, err := tikvClient.BatchCommands(ctx)
-		cancel()
+		streamClient, err := tikvClient.BatchCommands(context.Background())
 		if err != nil {
 			a.estError = errors.Trace(err)
 			return
@@ -311,7 +325,7 @@ func (c *rpcClient) SendRequest(ctx context.Context, addr string, req *tikvrpc.R
 
 	if config.GetGlobalConfig().TiKVClient.MaxBatchSize > 0 {
 		if batchReq := req.ToBatchCommandsRequest(); batchReq != nil {
-			return sendBatchRequest(ctx, addr, connArray, batchReq, timeout)
+			return sendBatchRequest(ctx, addr, connArray.batchConn, batchReq, timeout)
 		}
 	}
 
