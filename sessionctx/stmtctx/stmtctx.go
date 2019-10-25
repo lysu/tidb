@@ -106,8 +106,8 @@ type StatementContext struct {
 		warnings          []SQLWarn
 		errorCount        uint16
 		histogramsNotLoad bool
-		execDetails       execdetails.ExecDetails
-		allExecDetails    []*execdetails.ExecDetails
+		execDetails       execdetails.CopExecDetails
+		allExecDetails    []*execdetails.CopExecDetails
 	}
 	// PrevAffectedRows is the affected-rows value(DDL is 0, DML is the number of affected rows).
 	PrevAffectedRows int64
@@ -425,8 +425,8 @@ func (sc *StatementContext) ResetForRetry() {
 	sc.mu.message = ""
 	sc.mu.errorCount = 0
 	sc.mu.warnings = nil
-	sc.mu.execDetails = execdetails.ExecDetails{}
-	sc.mu.allExecDetails = make([]*execdetails.ExecDetails, 0, 4)
+	sc.mu.execDetails = execdetails.CopExecDetails{}
+	sc.mu.allExecDetails = make([]*execdetails.CopExecDetails, 0, 4)
 	sc.mu.Unlock()
 	sc.TableIDs = sc.TableIDs[:0]
 	sc.IndexNames = sc.IndexNames[:0]
@@ -434,7 +434,7 @@ func (sc *StatementContext) ResetForRetry() {
 
 // MergeExecDetails merges a single region execution details into self, used to print
 // the information in slow query log.
-func (sc *StatementContext) MergeExecDetails(details *execdetails.ExecDetails, commitDetails *execdetails.CommitDetails) {
+func (sc *StatementContext) MergeExecDetails(details *execdetails.CopExecDetails, commitDetails *execdetails.CommitExecDetails) {
 	sc.mu.Lock()
 	if details != nil {
 		sc.mu.execDetails.ProcessTime += details.ProcessTime
@@ -450,8 +450,8 @@ func (sc *StatementContext) MergeExecDetails(details *execdetails.ExecDetails, c
 }
 
 // GetExecDetails gets the execution details for the statement.
-func (sc *StatementContext) GetExecDetails() execdetails.ExecDetails {
-	var details execdetails.ExecDetails
+func (sc *StatementContext) GetExecDetails() execdetails.CopExecDetails {
+	var details execdetails.CopExecDetails
 	sc.mu.Lock()
 	details = sc.mu.execDetails
 	sc.mu.Unlock()

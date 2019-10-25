@@ -385,7 +385,7 @@ type copIteratorTaskSender struct {
 
 type copResponse struct {
 	pbResp   *coprocessor.Response
-	detail   *execdetails.ExecDetails
+	detail   *execdetails.CopExecDetails
 	startKey kv.Key
 	err      error
 	respSize int64
@@ -393,8 +393,8 @@ type copResponse struct {
 }
 
 const (
-	sizeofExecDetails   = int(unsafe.Sizeof(execdetails.ExecDetails{}))
-	sizeofCommitDetails = int(unsafe.Sizeof(execdetails.CommitDetails{}))
+	sizeofExecDetails   = int(unsafe.Sizeof(execdetails.CopExecDetails{}))
+	sizeofCommitDetails = int(unsafe.Sizeof(execdetails.CommitExecDetails{}))
 )
 
 // GetData implements the kv.ResultSubset GetData interface.
@@ -407,7 +407,7 @@ func (rs *copResponse) GetStartKey() kv.Key {
 	return rs.startKey
 }
 
-func (rs *copResponse) GetExecDetails() *execdetails.ExecDetails {
+func (rs *copResponse) GetExecDetails() *execdetails.CopExecDetails {
 	return rs.detail
 }
 
@@ -811,7 +811,7 @@ func (worker *copIteratorWorker) handleCopResponse(bo *Backoffer, rpcCtx *RPCCon
 		resp.startKey = task.ranges.at(0).StartKey
 	}
 	if resp.detail == nil {
-		resp.detail = new(execdetails.ExecDetails)
+		resp.detail = new(execdetails.CopExecDetails)
 	}
 	resp.detail.BackoffTime = time.Duration(bo.totalSleep) * time.Millisecond
 	if rpcCtx != nil {

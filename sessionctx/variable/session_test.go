@@ -131,7 +131,7 @@ func (*testSessionSuite) TestSlowLogFormat(c *C) {
 	seVar.InRestrictedSQL = true
 	txnTS := uint64(406649736972468225)
 	costTime := time.Second
-	execDetail := execdetails.ExecDetails{
+	execDetail := execdetails.CopExecDetails{
 		ProcessTime:   time.Second * time.Duration(2),
 		WaitTime:      time.Minute,
 		BackoffTime:   time.Millisecond,

@@ -24,14 +24,14 @@ import (
 )
 
 func TestString(t *testing.T) {
-	detail := &ExecDetails{
+	detail := &CopExecDetails{
 		ProcessTime:   2*time.Second + 5*time.Millisecond,
 		WaitTime:      time.Second,
 		BackoffTime:   time.Second,
 		RequestCount:  1,
 		TotalKeys:     100,
 		ProcessedKeys: 10,
-		CommitDetail: &CommitDetails{
+		CommitDetail: &CommitExecDetails{
 			GetCommitTsTime:   time.Second,
 			PrewriteTime:      time.Second,
 			CommitTime:        time.Second,
@@ -60,7 +60,7 @@ func TestString(t *testing.T) {
 	if str := detail.String(); str != expected {
 		t.Errorf("got:\n%s\nexpected:\n%s", str, expected)
 	}
-	detail = &ExecDetails{}
+	detail = &CopExecDetails{}
 	if str := detail.String(); str != "" {
 		t.Errorf("got:\n%s\nexpected:\n", str)
 	}

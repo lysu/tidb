@@ -31,8 +31,15 @@ type commitDetailCtxKeyType struct{}
 // CommitDetailCtxKey presents CommitDetail info key in context.
 var CommitDetailCtxKey = commitDetailCtxKeyType{}
 
-// ExecDetails contains execution detail information.
-type ExecDetails struct {
+// SQLExecDetails contains SQL execution detail information.
+type SQLExecDetails struct {
+	CopExecDetails *CopExecDetails
+	SnapshotDetail *SnapshotExecDetails
+	CommitDetail   *CommitExecDetails
+}
+
+// CopExecDetails contains cop execution detail information.
+type CopExecDetails struct {
 	CalleeAddress string
 	ProcessTime   time.Duration
 	WaitTime      time.Duration
@@ -40,11 +47,15 @@ type ExecDetails struct {
 	RequestCount  int
 	TotalKeys     int64
 	ProcessedKeys int64
-	CommitDetail  *CommitDetails
+	CommitDetail  *CommitExecDetails
 }
 
-// CommitDetails contains commit detail information.
-type CommitDetails struct {
+// SnapshotExecDetails contains snapshot execution detail information.
+type SnapshotExecDetails struct {
+}
+
+// CommitExecDetails contains commit detail information.
+type CommitExecDetails struct {
 	GetCommitTsTime   time.Duration
 	PrewriteTime      time.Duration
 	CommitTime        time.Duration
@@ -77,7 +88,7 @@ const (
 )
 
 // String implements the fmt.Stringer interface.
-func (d ExecDetails) String() string {
+func (d CopExecDetails) String() string {
 	parts := make([]string, 0, 6)
 	if d.ProcessTime > 0 {
 		parts = append(parts, ProcessTimeStr+": "+strconv.FormatFloat(d.ProcessTime.Seconds(), 'f', -1, 64))
@@ -141,8 +152,8 @@ func (d ExecDetails) String() string {
 	return strings.Join(parts, " ")
 }
 
-// ToZapFields wraps the ExecDetails as zap.Fields.
-func (d ExecDetails) ToZapFields() (fields []zap.Field) {
+// ToZapFields wraps the CopExecDetails as zap.Fields.
+func (d CopExecDetails) ToZapFields() (fields []zap.Field) {
 	fields = make([]zap.Field, 0, 16)
 	if d.ProcessTime > 0 {
 		fields = append(fields, zap.String(strings.ToLower(ProcessTimeStr), strconv.FormatFloat(d.ProcessTime.Seconds(), 'f', -1, 64)+"s"))

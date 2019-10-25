@@ -313,7 +313,7 @@ func (txn *tikvTxn) Commit(ctx context.Context) error {
 	defer func() {
 		ctxValue := ctx.Value(execdetails.CommitDetailCtxKey)
 		if ctxValue != nil {
-			commitDetail := ctxValue.(**execdetails.CommitDetails)
+			commitDetail := ctxValue.(**execdetails.CommitExecDetails)
 			if *commitDetail != nil {
 				(*commitDetail).TxnRetry += 1
 			} else {
