@@ -392,10 +392,7 @@ type copResponse struct {
 	respTime time.Duration
 }
 
-const (
-	sizeofExecDetails   = int(unsafe.Sizeof(execdetails.CopExecDetails{}))
-	sizeofCommitDetails = int(unsafe.Sizeof(execdetails.CommitExecDetails{}))
-)
+const sizeofExecDetails = int(unsafe.Sizeof(execdetails.CopExecDetails{}))
 
 // GetData implements the kv.ResultSubset GetData interface.
 func (rs *copResponse) GetData() []byte {
@@ -421,9 +418,6 @@ func (rs *copResponse) MemSize() int64 {
 	rs.respSize += int64(cap(rs.startKey))
 	if rs.detail != nil {
 		rs.respSize += int64(sizeofExecDetails)
-		if rs.detail.CommitDetail != nil {
-			rs.respSize += int64(sizeofCommitDetails)
-		}
 	}
 	if rs.pbResp != nil {
 		// Using a approximate size since it's hard to get a accurate value.
