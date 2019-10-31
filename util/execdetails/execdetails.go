@@ -82,6 +82,10 @@ type CopExecDetails struct {
 
 // SnapshotExecDetails contains snapshot execution detail information.
 type SnapshotExecDetails struct {
+	GetTotalTime    int64
+	GetCnt          uint32
+	BatchGetCnt     uint32
+	ResolveLockTime time.Duration
 }
 
 func (s *SnapshotExecDetails) ToZapFields(fields []zap.Field) []zap.Field {

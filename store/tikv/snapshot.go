@@ -29,6 +29,7 @@ import (
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 	"github.com/pingcap/tidb/tablecodec"
+	"github.com/pingcap/tidb/util/execdetails"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -50,15 +51,16 @@ var (
 
 // tikvSnapshot implements the kv.Snapshot interface.
 type tikvSnapshot struct {
-	store           *tikvStore
-	version         kv.Version
-	priority        pb.CommandPri
-	notFillCache    bool
-	syncLog         bool
-	keyOnly         bool
-	vars            *kv.Variables
-	replicaRead     kv.ReplicaReadType
-	replicaReadSeed uint32
+	store              *tikvStore
+	version            kv.Version
+	priority           pb.CommandPri
+	notFillCache       bool
+	syncLog            bool
+	keyOnly            bool
+	vars               *kv.Variables
+	replicaRead        kv.ReplicaReadType
+	replicaReadSeed    uint32
+	snapshotExecDetail execdetails.SnapshotExecDetails
 
 	// Cache the result of BatchGet.
 	// The invariance is that calling BatchGet multiple times using the same start ts,
@@ -242,6 +244,7 @@ func (s *tikvSnapshot) batchGetSingleRegion(bo *Backoffer, batch batchKeys, coll
 			locks = append(locks, lock)
 		}
 		if len(lockedKeys) > 0 {
+			start := time.Now()
 			msBeforeExpired, err := s.store.lockResolver.ResolveLocks(bo, s.version.Ver, locks)
 			if err != nil {
 				return errors.Trace(err)
@@ -249,9 +252,11 @@ func (s *tikvSnapshot) batchGetSingleRegion(bo *Backoffer, batch batchKeys, coll
 			if msBeforeExpired > 0 {
 				err = bo.BackoffWithMaxSleep(boTxnLockFast, int(msBeforeExpired), errors.Errorf("batchGet lockedKeys: %d", len(lockedKeys)))
 				if err != nil {
+					s.snapshotExecDetail.ResolveLockTime += time.Since(start)
 					return errors.Trace(err)
 				}
 			}
+			s.snapshotExecDetail.ResolveLockTime += time.Since(start)
 			pending = lockedKeys
 			continue
 		}
@@ -266,7 +271,6 @@ func (s *tikvSnapshot) Get(ctx context.Context, k kv.Key) ([]byte, error) {
 		defer span1.Finish()
 		ctx = opentracing.ContextWithSpan(ctx, span1)
 	}
-
 	ctx = context.WithValue(ctx, txnStartKey, s.version.Ver)
 	val, err := s.get(NewBackoffer(ctx, getMaxBackoff), k)
 	if err != nil {
@@ -330,6 +334,7 @@ func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 			if err != nil {
 				return nil, errors.Trace(err)
 			}
+			start := time.Now()
 			msBeforeExpired, err := s.store.lockResolver.ResolveLocks(bo, s.version.Ver, []*Lock{lock})
 			if err != nil {
 				return nil, errors.Trace(err)
@@ -337,9 +342,11 @@ func (s *tikvSnapshot) get(bo *Backoffer, k kv.Key) ([]byte, error) {
 			if msBeforeExpired > 0 {
 				err = bo.BackoffWithMaxSleep(boTxnLockFast, int(msBeforeExpired), errors.New(keyErr.String()))
 				if err != nil {
+					s.snapshotExecDetail.ResolveLockTime += time.Since(start)
 					return nil, errors.Trace(err)
 				}
 			}
+			s.snapshotExecDetail.ResolveLockTime += time.Since(start)
 			continue
 		}
 		return val, nil
