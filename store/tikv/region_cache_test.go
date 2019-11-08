@@ -52,7 +52,7 @@ func (s *testRegionCacheSuite) SetUpTest(c *C) {
 	s.peer1 = peerIDs[0]
 	s.peer2 = peerIDs[1]
 	pdCli := &codecPDClient{mocktikv.NewPDClient(s.cluster)}
-	s.cache = NewRegionCache(pdCli)
+	s.cache = NewRegionCache(pdCli, nil)
 	s.bo = NewBackoffer(context.Background(), 5000)
 }
 
@@ -654,7 +654,7 @@ func (s *testRegionCacheSuite) TestReconnect(c *C) {
 func (s *testRegionCacheSuite) TestRegionEpochAheadOfTiKV(c *C) {
 	// Create a separated region cache to do this test.
 	pdCli := &codecPDClient{mocktikv.NewPDClient(s.cluster)}
-	cache := NewRegionCache(pdCli)
+	cache := NewRegionCache(pdCli, nil)
 	defer cache.Close()
 
 	region := createSampleRegion([]byte("k1"), []byte("k2"))
@@ -705,7 +705,7 @@ func (s *testRegionCacheSuite) TestUpdateStoreAddr(c *C) {
 
 	client := &RawKVClient{
 		clusterID:   0,
-		regionCache: NewRegionCache(mocktikv.NewPDClient(s.cluster)),
+		regionCache: NewRegionCache(mocktikv.NewPDClient(s.cluster), nil),
 		rpcClient:   mocktikv.NewRPCClient(s.cluster, mvccStore),
 	}
 	defer client.Close()
@@ -730,7 +730,7 @@ func (s *testRegionCacheSuite) TestReplaceAddrWithNewStore(c *C) {
 
 	client := &RawKVClient{
 		clusterID:   0,
-		regionCache: NewRegionCache(mocktikv.NewPDClient(s.cluster)),
+		regionCache: NewRegionCache(mocktikv.NewPDClient(s.cluster), nil),
 		rpcClient:   mocktikv.NewRPCClient(s.cluster, mvccStore),
 	}
 	defer client.Close()
@@ -1006,7 +1006,7 @@ func BenchmarkOnRequestFail(b *testing.B) {
 	*/
 	regionCnt, storeCount := 998, 3
 	cluster := createClusterWithStoresAndRegions(regionCnt, storeCount)
-	cache := NewRegionCache(mocktikv.NewPDClient(cluster))
+	cache := NewRegionCache(mocktikv.NewPDClient(cluster), nil)
 	defer cache.Close()
 	loadRegionsToCache(cache, regionCnt)
 	bo := NewBackoffer(context.Background(), 1)

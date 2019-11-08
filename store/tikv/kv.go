@@ -189,7 +189,7 @@ func newTikvStore(uuid string, pdClient pd.Client, spkv SafePointKV, client Clie
 		oracle:          o,
 		client:          client,
 		pdClient:        pdClient,
-		regionCache:     NewRegionCache(pdClient),
+		regionCache:     NewRegionCache(pdClient, client),
 		kv:              spkv,
 		safePoint:       0,
 		spTime:          time.Now(),

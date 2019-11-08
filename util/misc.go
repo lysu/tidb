@@ -14,8 +14,14 @@
 package util
 
 import (
+	"context"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"net"
+	"os"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/pingcap/errors"
@@ -150,4 +156,56 @@ func IsMemOrSysDB(dbLowerName string) bool {
 		return true
 	}
 	return false
+}
+
+type RPCErrType int32
+
+const (
+	OK RPCErrType = iota
+	Cancel
+	Timeout
+	ServerUnavailable
+	OtherError
+)
+
+func ClassifyRPCError(err error) RPCErrType {
+	if err == nil {
+		return OK
+	}
+	err = errors.Cause(err)
+
+	// context cancel or timeout
+	switch {
+	case err == context.Canceled:
+		return Cancel
+	case err == context.DeadlineExceeded || os.IsTimeout(err): // socket timeout error
+		return Timeout
+	default:
+	}
+
+	// socket timeout error
+	switch t := err.(type) {
+	case *net.OpError:
+		if t.Op == "dial" || t.Op == "read" {
+			return ServerUnavailable
+		}
+	case syscall.Errno:
+		if t == syscall.ECONNREFUSED {
+			return ServerUnavailable
+		}
+	}
+
+	// grpc errors
+	if ev, isGRPC := status.FromError(err); isGRPC {
+		switch ev.Code() {
+		case codes.DeadlineExceeded:
+			return Timeout
+		case codes.Unavailable:
+			return ServerUnavailable
+		case codes.Canceled:
+			return Cancel
+		}
+	}
+
+	return OtherError
 }

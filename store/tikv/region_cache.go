@@ -27,9 +27,12 @@ import (
 	"github.com/pingcap/errors"
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/metapb"
+	"github.com/pingcap/kvproto/pkg/tikvpb"
 	pd "github.com/pingcap/pd/client"
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
+	"github.com/pingcap/tidb/store/tikv/tikvrpc"
+	"github.com/pingcap/tidb/util"
 	"github.com/pingcap/tidb/util/logutil"
 	atomic2 "go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -188,6 +191,7 @@ func (r *Region) needReload() bool {
 // RegionCache caches Regions loaded from PD.
 type RegionCache struct {
 	pdClient pd.Client
+	kvClient Client
 
 	mu struct {
 		sync.RWMutex                         // mutex protect cached region
@@ -203,9 +207,10 @@ type RegionCache struct {
 }
 
 // NewRegionCache creates a RegionCache.
-func NewRegionCache(pdClient pd.Client) *RegionCache {
+func NewRegionCache(pdClient pd.Client, kvClient Client) *RegionCache {
 	c := &RegionCache{
 		pdClient: pdClient,
+		kvClient: kvClient,
 	}
 	c.mu.regions = make(map[RegionVerID]*Region)
 	c.mu.sorted = btree.New(btreeDegree)
@@ -224,24 +229,58 @@ func (c *RegionCache) Close() {
 // asyncCheckAndResolveLoop with
 func (c *RegionCache) asyncCheckAndResolveLoop() {
 	var needCheckStores []*Store
+	heartbeatTick := time.NewTicker(initStoreHeartbeatIntervalSec * time.Second)
+	defer heartbeatTick.Stop()
 	for {
 		select {
 		case <-c.closeCh:
 			return
 		case <-c.notifyCheckCh:
 			needCheckStores = needCheckStores[:0]
-			c.checkAndResolve(needCheckStores)
+			c.checkStoreResolve(needCheckStores)
+		case <-heartbeatTick.C:
+			c.heartbeatStore(needCheckStores)
 		}
 	}
 }
 
-// checkAndResolve checks and resolve addr of failed stores.
-// this method isn't thread-safe and only be used by one goroutine.
-func (c *RegionCache) checkAndResolve(needCheckStores []*Store) {
+const (
+	initStoreHeartbeatIntervalSec  = 5
+	maxStoreHeartbeatIntervalSec   = 80
+	storeHeartbeatTimeoutSec       = 1
+	stopHeartbeatAfterContinueFail = int64(12 * time.Hour / time.Second / maxStoreHeartbeatIntervalSec)
+)
+
+func (c *RegionCache) heartbeatStore(needCheckStores []*Store) {
 	defer func() {
 		r := recover()
 		if r != nil {
-			logutil.BgLogger().Error("panic in the checkAndResolve goroutine",
+			logutil.BgLogger().Error("panic in the heartbeatStore routine",
+				zap.Reflect("r", r),
+				zap.Stack("stack trace"))
+		}
+	}()
+	c.storeMu.RLock()
+	now := int32(time.Now().Unix())
+	for _, store := range c.storeMu.stores {
+		if store.getResolveState() == resolved && now >= store.nextHeartbeatTs {
+			needCheckStores = append(needCheckStores, store)
+		}
+	}
+	c.storeMu.RUnlock()
+
+	for _, store := range needCheckStores {
+		store.heartbeat(c.kvClient)
+	}
+}
+
+// checkStoreResolve checks and resolve addr of failed stores.
+// this method isn't thread-safe and only be used by one goroutine.
+func (c *RegionCache) checkStoreResolve(needCheckStores []*Store) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			logutil.BgLogger().Error("panic in the checkStoreResolve routine",
 				zap.Reflect("r", r),
 				zap.Stack("stack trace"))
 		}
@@ -1114,7 +1153,11 @@ func (c *RegionCache) switchNextPeer(r *Region, currentPeerIdx int, err error) {
 	}
 
 	nextIdx := (currentPeerIdx + 1) % len(rs.stores)
-	for rs.stores[nextIdx].storeType == kv.TiFlash {
+	for {
+		s := rs.stores[nextIdx]
+		if s.storeType != kv.TiFlash && (s.isLive() || nextIdx == currentPeerIdx) {
+			break
+		}
 		nextIdx = (nextIdx + 1) % len(rs.stores)
 	}
 	newRegionStore := rs.clone()
@@ -1167,13 +1210,15 @@ func (r *Region) ContainsByEnd(key []byte) bool {
 
 // Store contains a kv process's address.
 type Store struct {
-	addr         string        // loaded store address
-	storeID      uint64        // store's id
-	state        uint64        // unsafe store storeState
-	resolveMutex sync.Mutex    // protect pd from concurrent init requests
-	fail         uint32        // store fail count, see RegionStore.storeFails
-	storeType    kv.StoreType  // type of the store
-	tokenCount   atomic2.Int64 // used store token count
+	addr             string        // loaded store address
+	storeID          uint64        // store's id
+	state            uint64        // unsafe store storeState
+	resolveMutex     sync.Mutex    // protect pd from concurrent init requests
+	fail             uint32        // store fail count, see RegionStore.storeFails
+	storeType        kv.StoreType  // type of the store
+	tokenCount       atomic2.Int64 // used store token count
+	nextHeartbeatTs  int32
+	failHeartbeatCnt int64
 }
 
 type resolveState uint64
@@ -1238,6 +1283,43 @@ func (s *Store) initResolve(bo *Backoffer, c *RegionCache) (addr string, err err
 		}
 		return
 	}
+}
+
+// heartbeat sends heartbeat and update store status and next heartbeat time.
+func (s *Store) heartbeat(c Client) {
+	r := s.sendHeartbeat(c)
+	switch r {
+	case util.OK:
+		atomic.StoreInt64(&s.failHeartbeatCnt, 0)
+		s.nextHeartbeatTs = int32(time.Now().Unix()) + initStoreHeartbeatIntervalSec
+		return
+	case util.ServerUnavailable, util.Timeout:
+		failCnt := atomic.AddInt64(&s.failHeartbeatCnt, 1)
+		interval := int32(initStoreHeartbeatIntervalSec) * (2 ^ int32(failCnt-1))
+		if interval > maxStoreHeartbeatIntervalSec {
+			interval = maxStoreHeartbeatIntervalSec
+		}
+		s.nextHeartbeatTs = int32(time.Now().Unix()) + interval
+		if failCnt > stopHeartbeatAfterContinueFail {
+
+		}
+		return
+	case util.Cancel, util.OtherError:
+		return
+	default:
+		return
+	}
+}
+
+func (s *Store) isLive() bool {
+	return atomic.LoadInt64(&s.failHeartbeatCnt) <= 1
+}
+
+var emptyRequest = tikvrpc.NewRequest(tikvrpc.CmdEmpty, &tikvpb.BatchCommandsEmptyRequest{})
+
+func (s *Store) sendHeartbeat(kvClient Client) util.RPCErrType {
+	_, err := kvClient.SendRequest(context.Background(), s.addr, emptyRequest, storeHeartbeatTimeoutSec)
+	return util.ClassifyRPCError(err)
 }
 
 // reResolve try to resolve addr for store that need check.
