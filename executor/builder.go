@@ -46,6 +46,7 @@ import (
 	"github.com/pingcap/tidb/util/chunk"
 	"github.com/pingcap/tidb/util/execdetails"
 	"github.com/pingcap/tidb/util/ranger"
+	"github.com/pingcap/tidb/util/rowcodec"
 	"github.com/pingcap/tidb/util/stringutil"
 	"github.com/pingcap/tidb/util/timeutil"
 	"github.com/pingcap/tipb/go-tipb"
@@ -2406,8 +2407,54 @@ func (b *executorBuilder) buildSQLBindExec(v *plannercore.SQLBindPlan) Executor 
 	return e
 }
 
+func newRowDecoder(ctx sessionctx.Context, schema *expression.Schema, tbl *model.TableInfo) (*rowcodec.Decoder, error) {
+	getColInfoByID := func(tbl *model.TableInfo, colID int64) *model.ColumnInfo {
+		for _, col := range tbl.Columns {
+			if col.ID == colID {
+				return col
+			}
+		}
+		return nil
+	}
+	reqCols := make([]int64, len(schema.Columns))
+	handleColID := int64(-1)
+	tps := make([]*types.FieldType, len(schema.Columns))
+	defs := make([]func() ([]byte, error), len(schema.Columns))
+	for i, col := range schema.Columns {
+		isPK := (tbl.PKIsHandle && mysql.HasPriKeyFlag(col.RetType.Flag)) || col.ID == model.ExtraHandleID
+		if isPK {
+			handleColID = col.ID
+		}
+		reqCols[i] = col.ID
+		tps[i] = col.RetType
+		colInfo := getColInfoByID(tbl, col.ID)
+		if colInfo == nil {
+			continue
+		}
+		if !isPK {
+			defs[i] = func() ([]byte, error) {
+				d, err := table.GetColDefaultValue(ctx, colInfo)
+				if err != nil {
+					return nil, nil
+				}
+				xDefaultVal, err := rowcodec.ConvertDefaultValue(&d)
+				if err != nil {
+					return nil, err
+				}
+				return xDefaultVal, nil
+			}
+		}
+	}
+	return rowcodec.NewDecoder(reqCols, handleColID, tps, defs, ctx.GetSessionVars().TimeZone)
+}
+
 func (b *executorBuilder) buildBatchPointGet(plan *plannercore.BatchPointGetPlan) Executor {
 	startTS, err := b.getStartTS()
+	if err != nil {
+		b.err = err
+		return nil
+	}
+	decoder, err := newRowDecoder(b.ctx, plan.Schema(), plan.TblInfo)
 	if err != nil {
 		b.err = err
 		return nil
@@ -2416,6 +2463,7 @@ func (b *executorBuilder) buildBatchPointGet(plan *plannercore.BatchPointGetPlan
 		baseExecutor: newBaseExecutor(b.ctx, plan.Schema(), plan.ExplainID()),
 		tblInfo:      plan.TblInfo,
 		idxInfo:      plan.IndexInfo,
+		rowDecoder:   decoder,
 		startTS:      startTS,
 	}
 	var capacity int
