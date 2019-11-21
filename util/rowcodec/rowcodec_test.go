@@ -45,7 +45,7 @@ func (s *testSuite) TestRowCodec(c *C) {
 	c.Check(err, IsNil)
 
 	var rb rowcodec.Encoder
-	newRow, err := rb.EncodeFromOldRow(oldRow, nil)
+	newRow, err := rb.EncodeFromOldRow(nil, oldRow, nil)
 	c.Check(err, IsNil)
 	rd, err := rowcodec.NewDecoder(colIDs, 0, tps, nil, time.Local)
 	c.Assert(err, IsNil)
@@ -65,7 +65,7 @@ func (s *testSuite) TestRowCodecIsNull(c *C) {
 		tps[i] = types.NewFieldType(mysql.TypeLonglong)
 	}
 	var rb rowcodec.Encoder
-	newRow, err := rb.Encode(colIDs, types.MakeDatums(1, nil), nil)
+	newRow, err := rb.Encode(nil, colIDs, types.MakeDatums(1, nil), nil)
 	c.Assert(err, IsNil)
 	rd, err := rowcodec.NewDecoder(colIDs, 0, tps, nil, time.Local)
 	c.Assert(err, IsNil)
@@ -95,7 +95,7 @@ func BenchmarkEncode(b *testing.B) {
 	colIDs := []int64{1, 2, 3}
 	var err error
 	for i := 0; i < b.N; i++ {
-		buf, err = xb.Encode(colIDs, oldRow, buf)
+		buf, err = xb.Encode(nil, colIDs, oldRow, buf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -113,7 +113,7 @@ func BenchmarkEncodeFromOldRow(b *testing.B) {
 	var xb rowcodec.Encoder
 	var buf []byte
 	for i := 0; i < b.N; i++ {
-		buf, err = xb.EncodeFromOldRow(oldRowData, buf)
+		buf, err = xb.EncodeFromOldRow(nil, oldRowData, buf)
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -130,7 +130,7 @@ func BenchmarkDecode(b *testing.B) {
 		types.NewFieldType(mysql.TypeDouble),
 	}
 	var xb rowcodec.Encoder
-	xRowData, err := xb.Encode(colIDs, oldRow, nil)
+	xRowData, err := xb.Encode(nil, colIDs, oldRow, nil)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -158,7 +158,7 @@ func BenchmarkIsNull(b *testing.B) {
 		types.NewFieldType(mysql.TypeDouble),
 	}
 	var xb rowcodec.Encoder
-	xRowData, err := xb.Encode(colIDs, oldRow, nil)
+	xRowData, err := xb.Encode(nil, colIDs, oldRow, nil)
 	if err != nil {
 		b.Fatal(err)
 	}

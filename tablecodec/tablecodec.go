@@ -258,21 +258,11 @@ func EncodeValue(sc *stmtctx.StatementContext, b []byte, raw types.Datum) ([]byt
 // EncodeRow encode row data and column ids into a slice of byte.
 // valBuf and values pass by caller, for reducing EncodeRow allocates temporary bufs. If you pass valBuf and values as nil,
 // EncodeRow will allocate it.
-func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, valBuf []byte, values []types.Datum, e *rowcodec.Encoder) ([]byte, error) {
+func EncodeRow(sc *stmtctx.StatementContext, row []types.Datum, colIDs []int64, valBuf []byte, _ []types.Datum, e *rowcodec.Encoder) ([]byte, error) {
 	if len(row) != len(colIDs) {
 		return nil, errors.Errorf("EncodeRow error: data and columnID count not match %d vs %d", len(row), len(colIDs))
 	}
-	valBuf = valBuf[:0]
-	if values == nil {
-		values = make([]types.Datum, len(row))
-	}
-	for i, c := range row {
-		err := flatten(sc, c, &values[i])
-		if err != nil {
-			return valBuf, errors.Trace(err)
-		}
-	}
-	return e.Encode(colIDs, values, valBuf)
+	return e.Encode(sc, colIDs, row, valBuf)
 }
 
 // EncodeOldRow encode row data and column ids into a slice of byte.

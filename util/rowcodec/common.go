@@ -35,8 +35,12 @@ const (
 	CompactBytesFlag byte = 2
 	IntFlag          byte = 3
 	UintFlag         byte = 4
+	FloatFlag        byte = 5
+	DecimalFlag      byte = 6
 	VarintFlag       byte = 8
 	VaruintFlag      byte = 9
+	JSONFlag         byte = 10
+	MaxFlag          byte = 250
 )
 
 // row is the struct type used to access the a row.
@@ -241,4 +245,66 @@ func decodeUint(val []byte) uint64 {
 	default:
 		return binary.LittleEndian.Uint64(val)
 	}
+}
+
+type largeNotNullSorter Encoder
+
+func (s *largeNotNullSorter) Less(i, j int) bool {
+	return s.colIDs32[i] < s.colIDs32[j]
+}
+
+func (s *largeNotNullSorter) Len() int {
+	return int(s.numNotNullCols)
+}
+
+func (s *largeNotNullSorter) Swap(i, j int) {
+	s.colIDs32[i], s.colIDs32[j] = s.colIDs32[j], s.colIDs32[i]
+	s.values[i], s.values[j] = s.values[j], s.values[i]
+}
+
+type smallNotNullSorter Encoder
+
+func (s *smallNotNullSorter) Less(i, j int) bool {
+	return s.colIDs[i] < s.colIDs[j]
+}
+
+func (s *smallNotNullSorter) Len() int {
+	return int(s.numNotNullCols)
+}
+
+func (s *smallNotNullSorter) Swap(i, j int) {
+	s.colIDs[i], s.colIDs[j] = s.colIDs[j], s.colIDs[i]
+	s.values[i], s.values[j] = s.values[j], s.values[i]
+}
+
+type smallNullSorter Encoder
+
+func (s *smallNullSorter) Less(i, j int) bool {
+	nullCols := s.colIDs[s.numNotNullCols:]
+	return nullCols[i] < nullCols[j]
+}
+
+func (s *smallNullSorter) Len() int {
+	return int(s.numNullCols)
+}
+
+func (s *smallNullSorter) Swap(i, j int) {
+	nullCols := s.colIDs[s.numNotNullCols:]
+	nullCols[i], nullCols[j] = nullCols[j], nullCols[i]
+}
+
+type largeNullSorter Encoder
+
+func (s *largeNullSorter) Less(i, j int) bool {
+	nullCols := s.colIDs32[s.numNotNullCols:]
+	return nullCols[i] < nullCols[j]
+}
+
+func (s *largeNullSorter) Len() int {
+	return int(s.numNullCols)
+}
+
+func (s *largeNullSorter) Swap(i, j int) {
+	nullCols := s.colIDs32[s.numNotNullCols:]
+	nullCols[i], nullCols[j] = nullCols[j], nullCols[i]
 }
