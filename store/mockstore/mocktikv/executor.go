@@ -669,11 +669,23 @@ func hasColVal(data [][]byte, colIDs map[int64]int, id int64) bool {
 
 // getRowData decodes raw byte slice to row data.
 func getRowData(columns []*tipb.ColumnInfo, colIDs map[int64]int, handle int64, value []byte) ([][]byte, error) {
-	oldRow, err := rowcodec.RowToOldRow(value, nil)
-	if err != nil {
-		return nil, err
+	if rowcodec.IsNewFormat(value) {
+		colInfos := make([]rowcodec.ColInfo, len(columns))
+		for i := range columns {
+			col := columns[i]
+			colInfos[i] = rowcodec.ColInfo{
+				ColumnId:   col.ColumnId,
+				Tp:         col.Tp,
+				Flag:       col.Flag,
+				IsPKHandle: col.GetPkHandle(),
+				DefaultValue: func() ([]byte, error) {
+					return col.DefaultVal, nil
+				},
+			}
+		}
+		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, nil)
 	}
-	values, err := tablecodec.CutRowNew(oldRow, colIDs)
+	values, err := tablecodec.CutRowNew(value, colIDs)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

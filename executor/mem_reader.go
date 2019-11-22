@@ -221,11 +221,24 @@ func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model
 // getRowData decodes raw byte slice to row data.
 func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, cacheBytes, value []byte) ([][]byte, error) {
 	pkIsHandle := tb.PKIsHandle
-	oldRow, err := rowcodec.RowToOldRow(value, nil) // TODO: decode byte into datums
-	if err != nil {
-		return nil, err
+	if rowcodec.IsNewFormat(value) {
+		colInfos := make([]rowcodec.ColInfo, len(columns))
+		for i := range columns {
+			col := columns[i]
+			colInfos[i] = rowcodec.ColInfo{
+				ColumnId:   col.ID,
+				Tp:         int32(col.Tp),
+				Flag:       int32(col.Flag),
+				IsPKHandle: pkIsHandle && mysql.HasPriKeyFlag(col.Flag),
+				DefaultValue: func() ([]byte, error) {
+					// no need to fill default value.
+					return []byte{codec.NilFlag}, nil
+				},
+			}
+		}
+		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, cacheBytes)
 	}
-	values, err := tablecodec.CutRowNew(oldRow, colIDs)
+	values, err := tablecodec.CutRowNew(value, colIDs)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}

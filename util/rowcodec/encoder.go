@@ -34,6 +34,15 @@ type Encoder struct {
 	tempData   []byte
 }
 
+// Encode encodes a row from a datums slice.
+func (encoder *Encoder) Encode(sc *stmtctx.StatementContext, colIDs []int64, values []types.Datum, buf []byte) ([]byte, error) {
+	encoder.reset()
+	for i, colID := range colIDs {
+		encoder.addColumn(colID, values[i])
+	}
+	return encoder.build(sc, buf[:0])
+}
+
 func (encoder *Encoder) reset() {
 	encoder.large = false
 	encoder.numNotNullCols = 0
@@ -54,35 +63,6 @@ func (encoder *Encoder) addColumn(colID int64, d types.Datum) {
 	}
 	encoder.tempColIDs = append(encoder.tempColIDs, colID)
 	encoder.values = append(encoder.values, d)
-}
-
-// Encode encodes a row from a datums slice.
-func (encoder *Encoder) Encode(sc *stmtctx.StatementContext, colIDs []int64, values []types.Datum, buf []byte) ([]byte, error) {
-	encoder.reset()
-	for i, colID := range colIDs {
-		encoder.addColumn(colID, values[i])
-	}
-	return encoder.build(sc, buf[:0])
-}
-
-// EncodeFromOldRow encodes a row from an old-format row.
-func (encoder *Encoder) EncodeFromOldRow(sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
-	encoder.reset()
-	for len(oldRow) > 1 {
-		var d types.Datum
-		var err error
-		oldRow, d, err = codec.DecodeOne(oldRow)
-		if err != nil {
-			return nil, err
-		}
-		colID := d.GetInt64()
-		oldRow, d, err = codec.DecodeOne(oldRow)
-		if err != nil {
-			return nil, err
-		}
-		encoder.addColumn(colID, d)
-	}
-	return encoder.build(sc, buf[:0])
 }
 
 func (encoder *Encoder) build(sc *stmtctx.StatementContext, buf []byte) ([]byte, error) {
@@ -145,18 +125,12 @@ func (encoder *Encoder) separateNilAndSort() (numCols, notNullIdx int) {
 
 func (encoder *Encoder) prepareColData(sc *stmtctx.StatementContext, numCols, notNullIdx int) error {
 	r := &encoder.row
-	encoder.initValFlags()
 	for i := 0; i < notNullIdx; i++ {
 		d := encoder.values[i]
 		err := encoder.encodeDatum(sc, d)
 		if err != nil {
 			return err
 		}
-		flag, err := type2Flag(d.Kind())
-		if err != nil {
-			return err
-		}
-		r.valFlags[i] = flag
 		// handle convert to large
 		if len(r.data) > math.MaxUint16 && !r.large {
 			encoder.initColIDs32()
@@ -256,42 +230,6 @@ func (encoder *Encoder) encodeDatum(sc *stmtctx.StatementContext, d types.Datum)
 	return
 }
 
-func type2Flag(tp byte) (flag byte, err error) {
-	switch tp {
-	case types.KindInt64:
-		flag = IntFlag
-	case types.KindUint64:
-		flag = UintFlag
-	case types.KindString, types.KindBytes:
-		flag = BytesFlag
-	case types.KindMysqlTime:
-		flag = UintFlag
-	case types.KindMysqlDuration:
-		flag = IntFlag
-	case types.KindMysqlEnum:
-		flag = UintFlag
-	case types.KindMysqlSet:
-		flag = UintFlag
-	case types.KindBinaryLiteral, types.KindMysqlBit:
-		flag = UintFlag
-	case types.KindFloat32, types.KindFloat64:
-		flag = FloatFlag
-	case types.KindMysqlDecimal:
-		flag = DecimalFlag
-	case types.KindMysqlJSON:
-		flag = JSONFlag
-	case types.KindNull:
-		flag = NilFlag
-	case types.KindMinNotNull:
-		flag = BytesFlag
-	case types.KindMaxValue:
-		flag = MaxFlag
-	default:
-		err = errors.Errorf("unsupport encode type %d", tp)
-	}
-	return
-}
-
 func (encoder *Encoder) encodeBytes(buf []byte) []byte {
 	r := &encoder.row
 	buf = append(buf, CodecVer)
@@ -302,7 +240,6 @@ func (encoder *Encoder) encodeBytes(buf []byte) []byte {
 	buf = append(buf, flag)
 	buf = append(buf, byte(r.numNotNullCols), byte(r.numNotNullCols>>8))
 	buf = append(buf, byte(r.numNullCols), byte(r.numNullCols>>8))
-	buf = append(buf, r.valFlags...)
 	if r.large {
 		buf = append(buf, u32SliceToBytes(r.colIDs32)...)
 		buf = append(buf, u32SliceToBytes(r.offsets32)...)
@@ -312,14 +249,6 @@ func (encoder *Encoder) encodeBytes(buf []byte) []byte {
 	}
 	buf = append(buf, r.data...)
 	return buf
-}
-
-func (encoder *Encoder) initValFlags() {
-	if cap(encoder.valFlags) >= int(encoder.numNotNullCols) {
-		encoder.valFlags = encoder.valFlags[:encoder.numNotNullCols]
-	} else {
-		encoder.valFlags = make([]byte, encoder.numNotNullCols)
-	}
 }
 
 func (encoder *Encoder) initColIDs() {
@@ -368,68 +297,69 @@ func IsNewFormat(rowData []byte) bool {
 	return rowData[0] == CodecVer
 }
 
-// RowToOldRow converts a row to old-format row.
-func RowToOldRow(rowData, buf []byte) ([]byte, error) {
-	if len(rowData) == 0 || !IsNewFormat(rowData) {
-		return rowData, nil
-	}
-	buf = buf[:0]
-	var r row
-	err := r.setRowData(rowData)
-	if err != nil {
-		return nil, err
-	}
-	if !r.large {
-		for i, colID := range r.colIDs {
-			buf = append(buf, VarintFlag)
-			buf = codec.EncodeVarint(buf, int64(colID))
-			if i < int(r.numNotNullCols) {
-				val := r.getData(i)
-				switch r.valFlags[i] {
-				case BytesFlag:
-					buf = append(buf, CompactBytesFlag)
-					buf = codec.EncodeCompactBytes(buf, val)
-				case IntFlag:
-					buf = append(buf, VarintFlag)
-					buf = codec.EncodeVarint(buf, decodeInt(val))
-				case UintFlag:
-					buf = append(buf, VaruintFlag)
-					buf = codec.EncodeUvarint(buf, decodeUint(val))
-				default:
-					buf = append(buf, r.valFlags[i])
-					buf = append(buf, val...)
-				}
-			} else {
-				buf = append(buf, NilFlag)
-			}
+func findColID(r row, colID int64) (idx int, isNil, notFound bool) {
+	// Search the column in not-null columns array.
+	i, j := 0, int(r.numNotNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if r.large {
+			v = int64(r.colIDs32[h])
+		} else {
+			v = int64(r.colIDs[h])
 		}
-	} else {
-		for i, colID := range r.colIDs32 {
-			buf = append(buf, VarintFlag)
-			buf = codec.EncodeVarint(buf, int64(colID))
-			if i < int(r.numNotNullCols) {
-				val := r.getData(i)
-				switch r.valFlags[i] {
-				case BytesFlag:
-					buf = append(buf, CompactBytesFlag)
-					buf = codec.EncodeCompactBytes(buf, val)
-				case IntFlag:
-					buf = append(buf, VarintFlag)
-					buf = codec.EncodeVarint(buf, decodeInt(val))
-				case UintFlag:
-					buf = append(buf, VaruintFlag)
-					buf = codec.EncodeUvarint(buf, decodeUint(val))
-				default:
-					buf = append(buf, r.valFlags[i])
-					buf = append(buf, val...)
-				}
-			} else {
-				buf = append(buf, NilFlag)
-			}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			idx = h
+			return
 		}
 	}
-	if len(buf) == 0 {
-		buf = append(buf, NilFlag)
+
+	// Search the column in null columns array.
+	i, j = int(r.numNotNullCols), int(r.numNotNullCols+r.numNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if r.large {
+			v = int64(r.colIDs32[h])
+		} else {
+			v = int64(r.colIDs[h])
+		}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			isNil = true
+			return
+		}
 	}
-	return buf, nil
+	notFound = true
+	return
+}
+
+// encodeFromOldRow encodes a row from an old-format row.
+// only for test.
+func encodeFromOldRow(encoder *Encoder, sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
+	encoder.reset()
+	for len(oldRow) > 1 {
+		var d types.Datum
+		var err error
+		oldRow, d, err = codec.DecodeOne(oldRow)
+		if err != nil {
+			return nil, err
+		}
+		colID := d.GetInt64()
+		oldRow, d, err = codec.DecodeOne(oldRow)
+		if err != nil {
+			return nil, err
+		}
+		encoder.addColumn(colID, d)
+	}
+	return encoder.build(sc, buf[:0])
 }

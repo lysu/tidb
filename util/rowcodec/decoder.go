@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/pingcap/errors"
+	"github.com/pingcap/parser/model"
 	"github.com/pingcap/parser/mysql"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/types/json"
@@ -397,4 +398,85 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 		return nil, errors.Errorf("unknown type %d", ft.Tp)
 	}
 	return &d, nil
+}
+
+type ColInfo struct {
+	ColumnId     int64
+	Tp           int32
+	Flag         int32
+	IsPKHandle   bool
+	DefaultValue func() ([]byte, error)
+}
+
+// GetRowBytes decodes raw byte slice to row data.
+func GetRowBytes(columns []ColInfo, colIDs map[int64]int, handle int64, value []byte, cacheBytes []byte) ([][]byte, error) {
+	var r row
+	err := r.setRowData(value)
+	if err != nil {
+		return nil, err
+	}
+	values := make([][]byte, len(colIDs))
+	for _, col := range columns {
+		var err error
+		tp, err := FieldType2Flag(byte(col.Tp), uint(col.Flag))
+		if err != nil {
+			return nil, err
+		}
+		colID := col.ColumnId
+		offset := colIDs[colID]
+		if col.IsPKHandle || colID == model.ExtraHandleID {
+			var handleDatum types.Datum
+			if mysql.HasUnsignedFlag(uint(col.Flag)) {
+				// PK column is Unsigned.
+				handleDatum = types.NewUintDatum(uint64(handle))
+			} else {
+				handleDatum = types.NewIntDatum(handle)
+			}
+			handleData, err1 := codec.EncodeValue(nil, cacheBytes, handleDatum)
+			if err1 != nil {
+				return nil, errors.Trace(err1)
+			}
+			values[offset] = handleData
+			continue
+		}
+
+		idx, isNil, notFound := findColID(r, colID)
+		if notFound {
+			if col.DefaultValue != nil {
+				defVal, err := col.DefaultValue()
+				if err != nil {
+					return nil, err
+				}
+				if len(defVal) > 0 {
+					values[offset] = defVal
+					continue
+				}
+			}
+			if mysql.HasNotNullFlag(uint(col.Flag)) {
+				return nil, errors.Errorf("Miss column %d", colID)
+			}
+			values[offset] = []byte{NilFlag}
+		} else if !isNil {
+			val := r.getData(idx)
+			var buf []byte
+			switch tp {
+			case BytesFlag:
+				buf = append(buf, CompactBytesFlag)
+				buf = codec.EncodeCompactBytes(buf, val)
+			case IntFlag:
+				buf = append(buf, VarintFlag)
+				buf = codec.EncodeVarint(buf, decodeInt(val))
+			case UintFlag:
+				buf = append(buf, VaruintFlag)
+				buf = codec.EncodeUvarint(buf, decodeUint(val))
+			default:
+				buf = append(buf, tp)
+				buf = append(buf, val...)
+			}
+			values[offset] = buf
+		} else {
+			values[offset] = []byte{NilFlag}
+		}
+	}
+	return values, nil
 }

@@ -45,7 +45,7 @@ func (s *testSuite) TestRowCodec(c *C) {
 	c.Check(err, IsNil)
 
 	var rb rowcodec.Encoder
-	newRow, err := rb.EncodeFromOldRow(nil, oldRow, nil)
+	newRow, err := rowcodec.EncodeFromOldRowForTest(&rb, nil, oldRow, nil)
 	c.Check(err, IsNil)
 	rd, err := rowcodec.NewDecoder(colIDs, 0, tps, nil, time.Local)
 	c.Assert(err, IsNil)
@@ -113,7 +113,7 @@ func BenchmarkEncodeFromOldRow(b *testing.B) {
 	var xb rowcodec.Encoder
 	var buf []byte
 	for i := 0; i < b.N; i++ {
-		buf, err = xb.EncodeFromOldRow(nil, oldRowData, buf)
+		buf, err = rowcodec.EncodeFromOldRowForTest(&xb, nil, oldRowData, buf)
 		if err != nil {
 			b.Fatal(err)
 		}
