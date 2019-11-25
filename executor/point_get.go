@@ -69,10 +69,7 @@ type PointGetExecutor struct {
 
 // Init set fields needed for PointGetExecutor reuse, this does NOT change baseExecutor field
 func (e *PointGetExecutor) Init(p *plannercore.PointGetPlan, startTs uint64) error {
-	decoder, err := newRowDecoder(e.ctx, p.Schema(), p.TblInfo)
-	if err != nil {
-		return err
-	}
+	decoder := newRowDecoder(e.ctx, p.Schema(), p.TblInfo)
 	e.tblInfo = p.TblInfo
 	e.handle = p.Handle
 	e.idxInfo = p.IndexInfo

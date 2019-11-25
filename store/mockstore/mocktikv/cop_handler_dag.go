@@ -210,11 +210,7 @@ func (h *rpcHandler) buildTableScan(ctx *dagContext, executor *tipb.Executor) (*
 			},
 		}
 	}
-	rd, err := rowcodec.NewDecoder(colInfos, -1, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	rd := rowcodec.NewDecoder(colInfos, -1, nil)
 	e := &tableScanExec{
 		TableScan:      executor.TblScan,
 		kvRanges:       ranges,

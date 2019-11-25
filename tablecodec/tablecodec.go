@@ -371,10 +371,7 @@ func DecodeRowWithMapNew(b []byte, cols map[int64]*types.FieldType, loc *time.Lo
 	// for decodeToMap:
 	// - no need handle
 	// - no need get default value
-	rd, err := rowcodec.NewDecoder(reqCols, -1, loc)
-	if err != nil {
-		return nil, err
-	}
+	rd := rowcodec.NewDecoder(reqCols, -1, loc)
 	return rd.DecodeToDatumMap(b, -1, row)
 }
 

@@ -38,12 +38,12 @@ type Decoder struct {
 // requestColIDs is the columnIDs to decode. tps is the field types for request columns.
 // origDefault is the original default value in old format, if the column ID is not found in the row,
 // the origDefault will be used.
-func NewDecoder(columns []ColInfo, handleColID int64, loc *time.Location) (*Decoder, error) {
+func NewDecoder(columns []ColInfo, handleColID int64, loc *time.Location) *Decoder {
 	return &Decoder{
 		columns:     columns,
 		handleColID: handleColID,
 		loc:         loc,
-	}, nil
+	}
 }
 
 // ColInfo is row codec param to provide column info.

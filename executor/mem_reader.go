@@ -170,7 +170,7 @@ func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *mem
 		})
 	}
 
-	rd, _ := rowcodec.NewDecoder(colInfo, -1, nil)
+	rd := rowcodec.NewDecoder(colInfo, -1, nil)
 	return &memTableReader{
 		ctx:           us.ctx,
 		table:         us.table.Meta(),
@@ -423,11 +423,7 @@ func (m *memIndexLookUpReader) getMemRows() ([][]types.Datum, error) {
 			},
 		})
 	}
-	rd, err := rowcodec.NewDecoder(colInfos, -1, nil)
-	if err != nil {
-		return nil, err
-	}
-
+	rd := rowcodec.NewDecoder(colInfos, -1, nil)
 	memTblReader := &memTableReader{
 		ctx:           m.ctx,
 		table:         m.table.Meta(),

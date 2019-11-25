@@ -58,8 +58,7 @@ func (s *testSuite) TestRowCodec(c *C) {
 			Elems:   tp.Elems,
 		}
 	}
-	rd, err := rowcodec.NewDecoder(cols, 0, time.Local)
-	c.Assert(err, IsNil)
+	rd := rowcodec.NewDecoder(cols, 0, time.Local)
 	chk := chunk.NewChunkWithCapacity(tps, 1)
 	err = rd.DecodeToChunk(newRow, -1, chk)
 	c.Assert(err, IsNil)
@@ -127,10 +126,7 @@ func BenchmarkDecode(b *testing.B) {
 			Elems:   tp.Elems,
 		}
 	}
-	decoder, err := rowcodec.NewDecoder(cols, -1, time.Local)
-	if err != nil {
-		b.Fatal(err)
-	}
+	decoder := rowcodec.NewDecoder(cols, -1, time.Local)
 	chk := chunk.NewChunkWithCapacity(tps, 1)
 	for i := 0; i < b.N; i++ {
 		chk.Reset()
