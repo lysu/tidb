@@ -15,6 +15,7 @@ package mocktikv
 
 import (
 	"context"
+	"github.com/pingcap/tidb/util/rowcodec"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/pingcap/errors"
@@ -131,6 +132,23 @@ func (h *rpcHandler) handleAnalyzeColumnsReq(req *coprocessor.Request, analyzeRe
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
+	colInfos := make([]rowcodec.ColInfo, len(columns))
+	for i := range columns {
+		col := columns[i]
+		colInfos[i] = rowcodec.ColInfo{
+			ID:         col.ColumnId,
+			Tp:         col.Tp,
+			Flag:       col.Flag,
+			IsPKHandle: col.GetPkHandle(),
+			DefaultValue: func() ([]byte, error) {
+				return col.DefaultVal, nil
+			},
+		}
+	}
+	rd, err := rowcodec.NewDecoder(colInfos, -1, nil)
+	if err != nil {
+		return nil, err
+	}
 	e := &analyzeColumnsExec{
 		tblExec: &tableScanExec{
 			TableScan:      &tipb.TableScan{Columns: columns},
@@ -140,6 +158,7 @@ func (h *rpcHandler) handleAnalyzeColumnsReq(req *coprocessor.Request, analyzeRe
 			isolationLevel: h.isolationLevel,
 			mvccStore:      h.mvccStore,
 			execDetail:     new(execDetail),
+			rd:             rd,
 		},
 	}
 	e.fields = make([]*ast.ResultField, len(columns))

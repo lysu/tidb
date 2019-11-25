@@ -14,6 +14,7 @@
 package rowcodec
 
 import (
+	"github.com/pingcap/tidb/sessionctx/stmtctx"
 	"time"
 
 	"github.com/pingcap/errors"
@@ -28,228 +29,149 @@ import (
 // Decoder decodes the row to chunk.Chunk.
 type Decoder struct {
 	row
-	requestColIDs []int64
-	handleColID   int64
-	requestTypes  []*types.FieldType
-	origDefaults  []func() ([]byte, error)
-	loc           *time.Location
+	columns     []ColInfo
+	handleColID int64
+	loc         *time.Location
 }
 
 // NewDecoder creates a NewDecoder.
 // requestColIDs is the columnIDs to decode. tps is the field types for request columns.
 // origDefault is the original default value in old format, if the column ID is not found in the row,
 // the origDefault will be used.
-func NewDecoder(requestColIDs []int64, handleColID int64, tps []*types.FieldType, origDefaults []func() ([]byte, error),
-	loc *time.Location) (*Decoder, error) {
+func NewDecoder(columns []ColInfo, handleColID int64, loc *time.Location) (*Decoder, error) {
 	return &Decoder{
-		requestColIDs: requestColIDs,
-		handleColID:   handleColID,
-		requestTypes:  tps,
-		origDefaults:  origDefaults,
-		loc:           loc,
+		columns:     columns,
+		handleColID: handleColID,
+		loc:         loc,
 	}, nil
 }
 
-// ConvertDefaultValue converts default datum to bytes slice.
-func ConvertDefaultValue(d *types.Datum) (colVal []byte, err error) {
-	switch d.Kind() {
-	case types.KindNull:
-		return nil, nil
-	case types.KindInt64:
-		return encodeInt(nil, d.GetInt64()), nil
-	case types.KindUint64:
-		return encodeUint(nil, d.GetUint64()), nil
-	case types.KindString, types.KindBytes:
-		return d.GetBytes(), nil
-	default:
-		tmpData, err := codec.EncodeValue(defaultStmtCtx, nil, *d)
-		if err != nil {
-			return nil, err
-		}
-		return tmpData[1:], nil
-	}
+// ColInfo is row codec param to provide column info.
+type ColInfo struct {
+	ID           int64
+	Tp           int32
+	Flag         int32
+	IsPKHandle   bool
+	DefaultValue func() ([]byte, error)
+
+	Flen    int
+	Decimal int
+	Elems   []string
+}
+
+var defaultStmtCtx = &stmtctx.StatementContext{
+	TimeZone: time.Local,
 }
 
 // DecodeToDatumMap decodes byte slices to datum map.
 func (decoder *Decoder) DecodeToDatumMap(rowData []byte, handle int64, row map[int64]types.Datum) (map[int64]types.Datum, error) {
 	if row == nil {
-		row = make(map[int64]types.Datum, len(decoder.requestColIDs))
+		row = make(map[int64]types.Datum, len(decoder.columns))
 	}
 	err := decoder.setRowData(rowData)
 	if err != nil {
 		return nil, err
 	}
-	for colIdx, colID := range decoder.requestColIDs {
-		if colID == decoder.handleColID {
-			row[colID] = types.NewIntDatum(handle)
+	for _, col := range decoder.columns {
+		if col.ID == decoder.handleColID {
+			row[col.ID] = types.NewIntDatum(handle)
 			continue
 		}
-		// Search the column in not-null columns array.
-		i, j := 0, int(decoder.numNotNullCols)
-		var found bool
-		for i < j {
-			h := int(uint(i+j) >> 1) // avoid overflow when computing h
-			// i ≤ h < j
-			var v int64
-			if decoder.large {
-				v = int64(decoder.colIDs32[h])
-			} else {
-				v = int64(decoder.colIDs[h])
-			}
-			if v < colID {
-				i = h + 1
-			} else if v > colID {
-				j = h
-			} else {
-				found = true
-				colData := decoder.getData(h)
-				d, err := decoder.decodeColDatum(colIdx, colData)
-				if err != nil {
-					return nil, err
-				}
-				row[colID] = *d
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		if len(decoder.origDefaults) == 0 {
-			continue
-		}
-		defaultValFn := decoder.origDefaults[colIdx]
-		defaultVal, err := defaultValFn()
-		if err != nil {
-			return nil, err
-		}
-		if decoder.isNull(colID, defaultVal) {
-			var d types.Datum
-			d.SetNull()
-			row[colID] = d
-		} else {
-			d, err := decoder.decodeColDatum(colIdx, defaultVal)
+		idx, isNil, notFound := decoder.row.findColID(col.ID)
+		if !notFound && !isNil {
+			colData := decoder.getData(idx)
+			d, err := decoder.decodeColDatum(&col, colData)
 			if err != nil {
 				return nil, err
 			}
-			row[colID] = *d
+			row[col.ID] = *d
+			continue
 		}
+
+		if isNil {
+			var d types.Datum
+			d.SetNull()
+			row[col.ID] = d
+			continue
+		}
+
+		if col.DefaultValue == nil {
+			continue
+		}
+		defaultVal, err := col.DefaultValue()
+		if err != nil {
+			return nil, err
+		}
+
+		if len(defaultVal) == 0 {
+			var d types.Datum
+			d.SetNull()
+			row[col.ID] = d
+			continue
+		}
+
+		d, err := decoder.decodeColDatum(&col, defaultVal)
+		if err != nil {
+			return nil, err
+		}
+		row[col.ID] = *d
 	}
 	return row, nil
 }
 
-// Decode decodes a row to chunk.
-func (decoder *Decoder) Decode(rowData []byte, handle int64, chk *chunk.Chunk) error {
+// DecodeToChunk decodes a row to chunk.
+func (decoder *Decoder) DecodeToChunk(rowData []byte, handle int64, chk *chunk.Chunk) error {
 	err := decoder.setRowData(rowData)
 	if err != nil {
 		return err
 	}
-	for colIdx, colID := range decoder.requestColIDs {
-		if colID == decoder.handleColID {
+
+	for colIdx, col := range decoder.columns {
+		if col.ID == decoder.handleColID {
 			chk.AppendInt64(colIdx, handle)
 			continue
 		}
-		// Search the column in not-null columns array.
-		i, j := 0, int(decoder.numNotNullCols)
-		var found bool
-		for i < j {
-			h := int(uint(i+j) >> 1) // avoid overflow when computing h
-			// i ≤ h < j
-			var v int64
-			if decoder.large {
-				v = int64(decoder.colIDs32[h])
-			} else {
-				v = int64(decoder.colIDs[h])
-			}
-			if v < colID {
-				i = h + 1
-			} else if v > colID {
-				j = h
-			} else {
-				found = true
-				colData := decoder.getData(h)
-				err := decoder.decodeColData(colIdx, colData, chk)
-				if err != nil {
-					return err
-				}
-				break
-			}
-		}
-		if found {
-			continue
-		}
-		defaultValFn := decoder.origDefaults[colIdx]
-		defaultVal, err := defaultValFn()
-		if err != nil {
-			return err
-		}
-		if decoder.isNull(colID, defaultVal) {
-			chk.AppendNull(colIdx)
-		} else {
-			err := decoder.decodeColData(colIdx, defaultVal, chk)
+
+		idx, isNil, notFound := decoder.row.findColID(col.ID)
+		if !notFound && !isNil {
+			colData := decoder.getData(idx)
+			err := decoder.decodeColData(colIdx, &col, colData, chk)
 			if err != nil {
 				return err
 			}
+			continue
+		}
+
+		if isNil {
+			chk.AppendNull(colIdx)
+			continue
+		}
+
+		if col.DefaultValue == nil {
+			continue
+		}
+		defaultVal, err := col.DefaultValue()
+		if err != nil {
+			return err
+		}
+
+		if len(defaultVal) == 0 {
+			chk.AppendNull(colIdx)
+			continue
+		}
+
+		err = decoder.decodeColData(colIdx, &col, defaultVal, chk)
+		if err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// ColumnIsNull returns if the column value is null. Mainly used for count column aggregation.
-func (decoder *Decoder) ColumnIsNull(rowData []byte, colID int64, defaultVal []byte) (bool, error) {
-	err := decoder.setRowData(rowData)
-	if err != nil {
-		return false, err
-	}
-	// Search the column in not-null columns array.
-	i, j := 0, int(decoder.numNotNullCols)
-	for i < j {
-		h := int(uint(i+j) >> 1) // avoid overflow when computing h
-		// i ≤ h < j
-		var v int64
-		if decoder.large {
-			v = int64(decoder.colIDs32[h])
-		} else {
-			v = int64(decoder.colIDs[h])
-		}
-		if v < colID {
-			i = h + 1
-		} else if v > colID {
-			j = h
-		} else {
-			return false, nil
-		}
-	}
-	return decoder.isNull(colID, defaultVal), nil
-}
-
-func (decoder *Decoder) isNull(colID int64, defaultVal []byte) bool {
-	// Search the column in null columns array.
-	i, j := int(decoder.numNotNullCols), int(decoder.numNotNullCols+decoder.numNullCols)
-	for i < j {
-		h := int(uint(i+j) >> 1) // avoid overflow when computing h
-		// i ≤ h < j
-		var v int64
-		if decoder.large {
-			v = int64(decoder.colIDs32[h])
-		} else {
-			v = int64(decoder.colIDs[h])
-		}
-		if v < colID {
-			i = h + 1
-		} else if v > colID {
-			j = h
-		} else {
-			return true
-		}
-	}
-	return defaultVal == nil
-}
-
-func (decoder *Decoder) decodeColData(colIdx int, colData []byte, chk *chunk.Chunk) error {
-	ft := decoder.requestTypes[colIdx]
-	switch ft.Tp {
+func (decoder *Decoder) decodeColData(colIdx int, col *ColInfo, colData []byte, chk *chunk.Chunk) error {
+	switch byte(col.Tp) {
 	case mysql.TypeLonglong, mysql.TypeLong, mysql.TypeInt24, mysql.TypeShort, mysql.TypeTiny, mysql.TypeYear:
-		if mysql.HasUnsignedFlag(ft.Flag) {
+		if mysql.HasUnsignedFlag(uint(col.Flag)) {
 			chk.AppendUint64(colIdx, decodeUint(colData))
 		} else {
 			chk.AppendInt64(colIdx, decodeInt(colData))
@@ -277,13 +199,13 @@ func (decoder *Decoder) decodeColData(colIdx int, colData []byte, chk *chunk.Chu
 		chk.AppendMyDecimal(colIdx, dec)
 	case mysql.TypeDate, mysql.TypeDatetime, mysql.TypeTimestamp:
 		var t types.Time
-		t.Type = ft.Tp
-		t.Fsp = int8(ft.Decimal)
+		t.Type = uint8(col.Tp)
+		t.Fsp = int8(col.Decimal)
 		err := t.FromPackedUint(decodeUint(colData))
 		if err != nil {
 			return err
 		}
-		if ft.Tp == mysql.TypeTimestamp && decoder.loc != nil && !t.IsZero() {
+		if byte(col.Tp) == mysql.TypeTimestamp && decoder.loc != nil && !t.IsZero() {
 			err = t.ConvertTimeZone(time.UTC, decoder.loc)
 			if err != nil {
 				return err
@@ -293,23 +215,23 @@ func (decoder *Decoder) decodeColData(colIdx int, colData []byte, chk *chunk.Chu
 	case mysql.TypeDuration:
 		var dur types.Duration
 		dur.Duration = time.Duration(decodeInt(colData))
-		dur.Fsp = int8(ft.Decimal)
+		dur.Fsp = int8(col.Decimal)
 		chk.AppendDuration(colIdx, dur)
 	case mysql.TypeEnum:
 		// ignore error deliberately, to read empty enum value.
-		enum, err := types.ParseEnumValue(ft.Elems, decodeUint(colData))
+		enum, err := types.ParseEnumValue(col.Elems, decodeUint(colData))
 		if err != nil {
 			enum = types.Enum{}
 		}
 		chk.AppendEnum(colIdx, enum)
 	case mysql.TypeSet:
-		set, err := types.ParseSetValue(ft.Elems, decodeUint(colData))
+		set, err := types.ParseSetValue(col.Elems, decodeUint(colData))
 		if err != nil {
 			return err
 		}
 		chk.AppendSet(colIdx, set)
 	case mysql.TypeBit:
-		byteSize := (ft.Flen + 7) >> 3
+		byteSize := (col.Flen + 7) >> 3
 		chk.AppendBytes(colIdx, types.NewBinaryLiteralFromUint(decodeUint(colData), byteSize))
 	case mysql.TypeJSON:
 		var j json.BinaryJSON
@@ -317,17 +239,16 @@ func (decoder *Decoder) decodeColData(colIdx int, colData []byte, chk *chunk.Chu
 		j.Value = colData[1:]
 		chk.AppendJSON(colIdx, j)
 	default:
-		return errors.Errorf("unknown type %d", ft.Tp)
+		return errors.Errorf("unknown type %d", col.Tp)
 	}
 	return nil
 }
 
-func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum, error) {
+func (decoder *Decoder) decodeColDatum(col *ColInfo, colData []byte) (*types.Datum, error) {
 	var d types.Datum
-	ft := decoder.requestTypes[colIdx]
-	switch ft.Tp {
+	switch byte(col.Tp) {
 	case mysql.TypeLonglong, mysql.TypeLong, mysql.TypeInt24, mysql.TypeShort, mysql.TypeTiny, mysql.TypeYear:
-		if mysql.HasUnsignedFlag(ft.Flag) {
+		if mysql.HasUnsignedFlag(uint(col.Flag)) {
 			d.SetUint64(decodeUint(colData))
 		} else {
 			d.SetInt64(decodeInt(colData))
@@ -355,13 +276,13 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 		d.SetMysqlDecimal(dec)
 	case mysql.TypeDate, mysql.TypeDatetime, mysql.TypeTimestamp:
 		var t types.Time
-		t.Type = ft.Tp
-		t.Fsp = int8(ft.Decimal)
+		t.Type = uint8(col.Tp)
+		t.Fsp = int8(col.Decimal)
 		err := t.FromPackedUint(decodeUint(colData))
 		if err != nil {
 			return nil, err
 		}
-		if ft.Tp == mysql.TypeTimestamp && !t.IsZero() {
+		if byte(col.Tp) == mysql.TypeTimestamp && !t.IsZero() {
 			err = t.ConvertTimeZone(time.UTC, decoder.loc)
 			if err != nil {
 				return nil, err
@@ -371,23 +292,23 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 	case mysql.TypeDuration:
 		var dur types.Duration
 		dur.Duration = time.Duration(decodeInt(colData))
-		dur.Fsp = int8(ft.Decimal)
+		dur.Fsp = int8(col.Decimal)
 		d.SetMysqlDuration(dur)
 	case mysql.TypeEnum:
 		// ignore error deliberately, to read empty enum value.
-		enum, err := types.ParseEnumValue(ft.Elems, decodeUint(colData))
+		enum, err := types.ParseEnumValue(col.Elems, decodeUint(colData))
 		if err != nil {
 			enum = types.Enum{}
 		}
 		d.SetMysqlEnum(enum)
 	case mysql.TypeSet:
-		set, err := types.ParseSetValue(ft.Elems, decodeUint(colData))
+		set, err := types.ParseSetValue(col.Elems, decodeUint(colData))
 		if err != nil {
 			return nil, err
 		}
 		d.SetMysqlSet(set)
 	case mysql.TypeBit:
-		byteSize := (ft.Flen + 7) >> 3
+		byteSize := (col.Flen + 7) >> 3
 		d.SetBinaryLiteral(types.NewBinaryLiteralFromUint(decodeUint(colData), byteSize))
 	case mysql.TypeJSON:
 		var j json.BinaryJSON
@@ -395,36 +316,27 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 		j.Value = colData[1:]
 		d.SetMysqlJSON(j)
 	default:
-		return nil, errors.Errorf("unknown type %d", ft.Tp)
+		return nil, errors.Errorf("unknown type %d", col.Tp)
 	}
 	return &d, nil
 }
 
-// ColInfo is row codec param to provide column info.
-type ColInfo struct {
-	ColumnID     int64
-	Tp           int32
-	Flag         int32
-	IsPKHandle   bool
-	DefaultValue func() ([]byte, error)
-}
-
-// GetRowBytes decodes raw byte slice to row data.
-func GetRowBytes(columns []ColInfo, colIDs map[int64]int, handle int64, value []byte, cacheBytes []byte) ([][]byte, error) {
+// DecodeToBytes decodes raw byte slice to row data.
+func (decoder *Decoder) DecodeToBytes(outputOffset map[int64]int, handle int64, value []byte, cacheBytes []byte) ([][]byte, error) {
 	var r row
 	err := r.setRowData(value)
 	if err != nil {
 		return nil, err
 	}
-	values := make([][]byte, len(colIDs))
-	for _, col := range columns {
+	values := make([][]byte, len(outputOffset))
+	for _, col := range decoder.columns {
 		var err error
 		tp, err := FieldType2Flag(byte(col.Tp), uint(col.Flag))
 		if err != nil {
 			return nil, err
 		}
-		colID := col.ColumnID
-		offset := colIDs[colID]
+		colID := col.ID
+		offset := outputOffset[colID]
 		if col.IsPKHandle || colID == model.ExtraHandleID {
 			var handleDatum types.Datum
 			if mysql.HasUnsignedFlag(uint(col.Flag)) {
@@ -441,23 +353,8 @@ func GetRowBytes(columns []ColInfo, colIDs map[int64]int, handle int64, value []
 			continue
 		}
 
-		idx, isNil, notFound := findColID(r, colID)
-		if notFound {
-			if col.DefaultValue != nil {
-				defVal, err := col.DefaultValue()
-				if err != nil {
-					return nil, err
-				}
-				if len(defVal) > 0 {
-					values[offset] = defVal
-					continue
-				}
-			}
-			if mysql.HasNotNullFlag(uint(col.Flag)) {
-				return nil, errors.Errorf("Miss column %d", colID)
-			}
-			values[offset] = []byte{NilFlag}
-		} else if !isNil {
+		idx, isNil, notFound := r.findColID(colID)
+		if !notFound && !isNil {
 			val := r.getData(idx)
 			var buf []byte
 			switch tp {
@@ -475,9 +372,28 @@ func GetRowBytes(columns []ColInfo, colIDs map[int64]int, handle int64, value []
 				buf = append(buf, val...)
 			}
 			values[offset] = buf
-		} else {
-			values[offset] = []byte{NilFlag}
+			continue
 		}
+
+		if isNil {
+			values[offset] = []byte{NilFlag}
+			continue
+		}
+
+		if col.DefaultValue != nil {
+			defVal, err := col.DefaultValue()
+			if err != nil {
+				return nil, err
+			}
+			if len(defVal) > 0 {
+				values[offset] = defVal
+				continue
+			}
+		}
+		if mysql.HasNotNullFlag(uint(col.Flag)) {
+			return nil, errors.Errorf("Miss column %d", colID)
+		}
+		values[offset] = []byte{NilFlag}
 	}
 	return values, nil
 }

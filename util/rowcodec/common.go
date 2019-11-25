@@ -128,6 +128,52 @@ func (r *row) setRowData(rowData []byte) error {
 	return nil
 }
 
+func (r *row) findColID(colID int64) (idx int, isNil, notFound bool) {
+	// Search the column in not-null columns array.
+	i, j := 0, int(r.numNotNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if r.large {
+			v = int64(r.colIDs32[h])
+		} else {
+			v = int64(r.colIDs[h])
+		}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			idx = h
+			return
+		}
+	}
+
+	// Search the column in null columns array.
+	i, j = int(r.numNotNullCols), int(r.numNotNullCols+r.numNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if r.large {
+			v = int64(r.colIDs32[h])
+		} else {
+			v = int64(r.colIDs[h])
+		}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			isNil = true
+			return
+		}
+	}
+	notFound = true
+	return
+}
+
 func bytesToU32Slice(b []byte) []uint32 {
 	if len(b) == 0 {
 		return nil

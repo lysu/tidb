@@ -82,6 +82,7 @@ type tableScanExec struct {
 	start          int
 	counts         []int64
 	execDetail     *execDetail
+	rd             *rowcodec.Decoder
 
 	src executor
 }
@@ -192,7 +193,7 @@ func (e *tableScanExec) getRowFromPoint(ran kv.KeyRange) ([][]byte, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	row, err := getRowData(e.Columns, e.colIDs, handle, val)
+	row, err := getRowData(e.Columns, e.colIDs, handle, val, e.rd)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -240,7 +241,7 @@ func (e *tableScanExec) getRowFromRange(ran kv.KeyRange) ([][]byte, error) {
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	row, err := getRowData(e.Columns, e.colIDs, handle, pair.Value)
+	row, err := getRowData(e.Columns, e.colIDs, handle, pair.Value, e.rd)
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
@@ -668,22 +669,9 @@ func hasColVal(data [][]byte, colIDs map[int64]int, id int64) bool {
 }
 
 // getRowData decodes raw byte slice to row data.
-func getRowData(columns []*tipb.ColumnInfo, colIDs map[int64]int, handle int64, value []byte) ([][]byte, error) {
+func getRowData(columns []*tipb.ColumnInfo, colIDs map[int64]int, handle int64, value []byte, rd *rowcodec.Decoder) ([][]byte, error) {
 	if rowcodec.IsNewFormat(value) {
-		colInfos := make([]rowcodec.ColInfo, len(columns))
-		for i := range columns {
-			col := columns[i]
-			colInfos[i] = rowcodec.ColInfo{
-				ColumnID:   col.ColumnId,
-				Tp:         col.Tp,
-				Flag:       col.Flag,
-				IsPKHandle: col.GetPkHandle(),
-				DefaultValue: func() ([]byte, error) {
-					return col.DefaultVal, nil
-				},
-			}
-		}
-		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, nil)
+		return rd.DecodeToBytes(colIDs, handle, value, nil)
 	}
 	values, err := tablecodec.CutRowNew(value, colIDs)
 	if err != nil {

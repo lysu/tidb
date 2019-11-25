@@ -2416,36 +2416,40 @@ func newRowDecoder(ctx sessionctx.Context, schema *expression.Schema, tbl *model
 		}
 		return nil
 	}
-	reqCols := make([]int64, len(schema.Columns))
 	handleColID := int64(-1)
-	tps := make([]*types.FieldType, len(schema.Columns))
-	defs := make([]func() ([]byte, error), len(schema.Columns))
-	for i, col := range schema.Columns {
+	reqCols := make([]rowcodec.ColInfo, len(schema.Columns))
+	for i := range schema.Columns {
+		col := schema.Columns[i]
 		isPK := (tbl.PKIsHandle && mysql.HasPriKeyFlag(col.RetType.Flag)) || col.ID == model.ExtraHandleID
 		if isPK {
 			handleColID = col.ID
 		}
-		reqCols[i] = col.ID
-		tps[i] = col.RetType
-		colInfo := getColInfoByID(tbl, col.ID)
-		if colInfo == nil {
-			continue
-		}
+		var f func() ([]byte, error)
 		if !isPK {
-			defs[i] = func() ([]byte, error) {
+			f = func() ([]byte, error) {
+				colInfo := getColInfoByID(tbl, col.ID)
 				d, err := table.GetColDefaultValue(ctx, colInfo)
 				if err != nil {
 					return nil, nil
 				}
-				xDefaultVal, err := rowcodec.ConvertDefaultValue(&d)
+				xDefaultVal, err := rowcodec.EncodeValueDatum(ctx.GetSessionVars().StmtCtx, d, nil)
 				if err != nil {
 					return nil, err
 				}
 				return xDefaultVal, nil
 			}
 		}
+		reqCols[i] = rowcodec.ColInfo{
+			ID:           col.ID,
+			Tp:           int32(col.RetType.Tp),
+			Flag:         int32(col.RetType.Flag),
+			Flen:         col.RetType.Flen,
+			Decimal:      col.RetType.Decimal,
+			Elems:        col.RetType.Elems,
+			DefaultValue: f,
+		}
 	}
-	return rowcodec.NewDecoder(reqCols, handleColID, tps, defs, ctx.GetSessionVars().TimeZone)
+	return rowcodec.NewDecoder(reqCols, handleColID, ctx.GetSessionVars().TimeZone)
 }
 
 func (b *executorBuilder) buildBatchPointGet(plan *plannercore.BatchPointGetPlan) Executor {

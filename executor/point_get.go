@@ -216,7 +216,7 @@ func encodeIndexKey(e *baseExecutor, tblInfo *model.TableInfo, idxInfo *model.In
 
 func decodeRowValToChunk(e *baseExecutor, tblInfo *model.TableInfo, handle int64, rowVal []byte, chk *chunk.Chunk, rd *rowcodec.Decoder) error {
 	if rowcodec.IsNewFormat(rowVal) {
-		return rd.Decode(rowVal, handle, chk)
+		return rd.DecodeToChunk(rowVal, handle, chk)
 	}
 	return decodeOldRowValToChunk(e, tblInfo, handle, rowVal, chk)
 }

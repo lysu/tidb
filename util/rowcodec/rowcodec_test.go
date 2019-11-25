@@ -47,44 +47,26 @@ func (s *testSuite) TestRowCodec(c *C) {
 	var rb rowcodec.Encoder
 	newRow, err := rowcodec.EncodeFromOldRowForTest(&rb, nil, oldRow, nil)
 	c.Check(err, IsNil)
-	rd, err := rowcodec.NewDecoder(colIDs, 0, tps, nil, time.Local)
+	cols := make([]rowcodec.ColInfo, len(tps))
+	for i, tp := range tps {
+		cols[i] = rowcodec.ColInfo{
+			ID:      colIDs[i],
+			Tp:      int32(tp.Tp),
+			Flag:    int32(tp.Flag),
+			Flen:    tp.Flen,
+			Decimal: tp.Decimal,
+			Elems:   tp.Elems,
+		}
+	}
+	rd, err := rowcodec.NewDecoder(cols, 0, time.Local)
 	c.Assert(err, IsNil)
 	chk := chunk.NewChunkWithCapacity(tps, 1)
-	err = rd.Decode(newRow, -1, chk)
+	err = rd.DecodeToChunk(newRow, -1, chk)
 	c.Assert(err, IsNil)
 	row := chk.GetRow(0)
 	for i := 0; i < 3; i++ {
 		c.Assert(row.GetInt64(i), Equals, int64(i)+1)
 	}
-}
-
-func (s *testSuite) TestRowCodecIsNull(c *C) {
-	colIDs := []int64{1, 2}
-	tps := make([]*types.FieldType, 2)
-	for i := 0; i < 2; i++ {
-		tps[i] = types.NewFieldType(mysql.TypeLonglong)
-	}
-	var rb rowcodec.Encoder
-	newRow, err := rb.Encode(nil, colIDs, types.MakeDatums(1, nil), nil)
-	c.Assert(err, IsNil)
-	rd, err := rowcodec.NewDecoder(colIDs, 0, tps, nil, time.Local)
-	c.Assert(err, IsNil)
-	defaultVal := make([]byte, 1)
-	isNull, err := rd.ColumnIsNull(newRow, 1, defaultVal)
-	c.Assert(err, IsNil)
-	c.Assert(isNull, IsFalse)
-	isNull, err = rd.ColumnIsNull(newRow, 1, nil)
-	c.Assert(err, IsNil)
-	c.Assert(isNull, IsFalse)
-	isNull, err = rd.ColumnIsNull(newRow, 2, defaultVal)
-	c.Assert(err, IsNil)
-	c.Assert(isNull, IsTrue)
-	isNull, err = rd.ColumnIsNull(newRow, 3, defaultVal)
-	c.Assert(err, IsNil)
-	c.Assert(isNull, IsFalse)
-	isNull, err = rd.ColumnIsNull(newRow, 3, nil)
-	c.Assert(err, IsNil)
-	c.Assert(isNull, IsTrue)
 }
 
 func BenchmarkEncode(b *testing.B) {
@@ -134,40 +116,25 @@ func BenchmarkDecode(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	decoder, err := rowcodec.NewDecoder(colIDs, -1, tps, nil, time.Local)
+	cols := make([]rowcodec.ColInfo, len(tps))
+	for i, tp := range tps {
+		cols[i] = rowcodec.ColInfo{
+			ID:      colIDs[i],
+			Tp:      int32(tp.Tp),
+			Flag:    int32(tp.Flag),
+			Flen:    tp.Flen,
+			Decimal: tp.Decimal,
+			Elems:   tp.Elems,
+		}
+	}
+	decoder, err := rowcodec.NewDecoder(cols, -1, time.Local)
 	if err != nil {
 		b.Fatal(err)
 	}
 	chk := chunk.NewChunkWithCapacity(tps, 1)
 	for i := 0; i < b.N; i++ {
 		chk.Reset()
-		err = decoder.Decode(xRowData, 1, chk)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkIsNull(b *testing.B) {
-	b.ReportAllocs()
-	oldRow := types.MakeDatums(1, "abc", 1.1)
-	colIDs := []int64{-1, 2, 3}
-	tps := []*types.FieldType{
-		types.NewFieldType(mysql.TypeLonglong),
-		types.NewFieldType(mysql.TypeString),
-		types.NewFieldType(mysql.TypeDouble),
-	}
-	var xb rowcodec.Encoder
-	xRowData, err := xb.Encode(nil, colIDs, oldRow, nil)
-	if err != nil {
-		b.Fatal(err)
-	}
-	decoder, err := rowcodec.NewDecoder(colIDs, -1, tps, nil, time.Local)
-	if err != nil {
-		b.Fatal(err)
-	}
-	for i := 0; i < b.N; i++ {
-		_, err = decoder.ColumnIsNull(xRowData, int64(i)%4, nil)
+		err = decoder.DecodeToChunk(xRowData, 1, chk)
 		if err != nil {
 			b.Fatal(err)
 		}

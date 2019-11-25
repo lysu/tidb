@@ -355,13 +355,23 @@ func DecodeRowWithMapNew(b []byte, cols map[int64]*types.FieldType, loc *time.Lo
 		return row, nil
 	}
 
-	reqCols := make([]int64, 0, len(cols))
-	tps := make([]*types.FieldType, 0, len(cols))
+	reqCols := make([]rowcodec.ColInfo, len(cols))
+	var idx int
 	for id, tp := range cols {
-		reqCols = append(reqCols, id)
-		tps = append(tps, tp)
+		reqCols[idx] = rowcodec.ColInfo{
+			ID:      id,
+			Tp:      int32(tp.Tp),
+			Flag:    int32(tp.Flag),
+			Flen:    tp.Flen,
+			Decimal: tp.Decimal,
+			Elems:   tp.Elems,
+		}
+		idx++
 	}
-	rd, err := rowcodec.NewDecoder(reqCols, -1, tps, nil, loc)
+	// for decodeToMap:
+	// - no need handle
+	// - no need get default value
+	rd, err := rowcodec.NewDecoder(reqCols, -1, loc)
 	if err != nil {
 		return nil, err
 	}

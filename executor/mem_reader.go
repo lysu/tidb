@@ -146,7 +146,7 @@ type memTableReader struct {
 type allocBuf struct {
 	// cache for decode handle.
 	handleBytes []byte
-	colInfo     []rowcodec.ColInfo
+	rd          *rowcodec.Decoder
 }
 
 func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *memTableReader {
@@ -155,6 +155,22 @@ func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *mem
 		colIDs[col.ID] = i
 	}
 
+	colInfo := make([]rowcodec.ColInfo, 0, len(us.columns))
+	for i := range us.columns {
+		col := us.columns[i]
+		colInfo = append(colInfo, rowcodec.ColInfo{
+			ID:         col.ID,
+			Tp:         int32(col.Tp),
+			Flag:       int32(col.Flag),
+			IsPKHandle: us.table.Meta().PKIsHandle && mysql.HasPriKeyFlag(col.Flag),
+			DefaultValue: func() ([]byte, error) {
+				// no need to fill default value.
+				return []byte{codec.NilFlag}, nil
+			},
+		})
+	}
+
+	rd, _ := rowcodec.NewDecoder(colInfo, -1, nil)
 	return &memTableReader{
 		ctx:           us.ctx,
 		table:         us.table.Meta(),
@@ -167,7 +183,7 @@ func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *mem
 		colIDs:        colIDs,
 		buffer: allocBuf{
 			handleBytes: make([]byte, 0, 16),
-			colInfo:     make([]rowcodec.ColInfo, len(us.columns)),
+			rd:          rd,
 		},
 	}
 }
@@ -230,21 +246,7 @@ func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model
 func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, value []byte, buffer *allocBuf) ([][]byte, error) {
 	pkIsHandle := tb.PKIsHandle
 	if rowcodec.IsNewFormat(value) {
-		colInfos := buffer.colInfo[:0]
-		for i := range columns {
-			col := columns[i]
-			colInfos[i] = rowcodec.ColInfo{
-				ColumnID:   col.ID,
-				Tp:         int32(col.Tp),
-				Flag:       int32(col.Flag),
-				IsPKHandle: pkIsHandle && mysql.HasPriKeyFlag(col.Flag),
-				DefaultValue: func() ([]byte, error) {
-					// no need to fill default value.
-					return []byte{codec.NilFlag}, nil
-				},
-			}
-		}
-		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, buffer.handleBytes)
+		return buffer.rd.DecodeToBytes(colIDs, handle, value, buffer.handleBytes)
 	}
 	values, err := tablecodec.CutRowNew(value, colIDs)
 	if err != nil {
@@ -407,6 +409,25 @@ func (m *memIndexLookUpReader) getMemRows() ([][]types.Datum, error) {
 		colIDs[col.ID] = i
 	}
 
+	colInfos := make([]rowcodec.ColInfo, 0, len(m.columns))
+	for i := range m.columns {
+		col := m.columns[i]
+		colInfos = append(colInfos, rowcodec.ColInfo{
+			ID:         col.ID,
+			Tp:         int32(col.Tp),
+			Flag:       int32(col.Flag),
+			IsPKHandle: m.table.Meta().PKIsHandle && mysql.HasPriKeyFlag(col.Flag),
+			DefaultValue: func() ([]byte, error) {
+				// no need to fill default value.
+				return []byte{codec.NilFlag}, nil
+			},
+		})
+	}
+	rd, err := rowcodec.NewDecoder(colInfos, -1, nil)
+	if err != nil {
+		return nil, err
+	}
+
 	memTblReader := &memTableReader{
 		ctx:           m.ctx,
 		table:         m.table.Meta(),
@@ -417,8 +438,8 @@ func (m *memIndexLookUpReader) getMemRows() ([][]types.Datum, error) {
 		retFieldTypes: m.retFieldTypes,
 		colIDs:        colIDs,
 		buffer: allocBuf{
-			colInfo:     make([]rowcodec.ColInfo, len(m.columns)),
 			handleBytes: make([]byte, 0, 16),
+			rd:          rd,
 		},
 	}
 

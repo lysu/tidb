@@ -127,7 +127,8 @@ func (encoder *Encoder) prepareColData(sc *stmtctx.StatementContext, numCols, no
 	r := &encoder.row
 	for i := 0; i < notNullIdx; i++ {
 		d := encoder.values[i]
-		err := encoder.encodeDatum(sc, d)
+		var err error
+		r.data, err = EncodeValueDatum(sc, d, r.data)
 		if err != nil {
 			return err
 		}
@@ -167,16 +168,16 @@ func (encoder *Encoder) prepareColData(sc *stmtctx.StatementContext, numCols, no
 	return nil
 }
 
-func (encoder *Encoder) encodeDatum(sc *stmtctx.StatementContext, d types.Datum) (err error) {
-	r := &encoder.row
+// EncodeValueDatum encodes one row datum entry into bytes.
+// due to encode as value, this method will flatten value type like tablecodec.flatten
+func EncodeValueDatum(sc *stmtctx.StatementContext, d types.Datum, buffer []byte) (nBuffer []byte, err error) {
 	switch d.Kind() {
 	case types.KindInt64:
-		r.data = encodeInt(r.data, d.GetInt64())
+		buffer = encodeInt(buffer, d.GetInt64())
 	case types.KindUint64:
-		r.data = encodeUint(r.data, d.GetUint64())
+		buffer = encodeUint(buffer, d.GetUint64())
 	case types.KindString, types.KindBytes:
-		r.data = append(r.data, d.GetBytes()...)
-
+		buffer = append(buffer, d.GetBytes()...)
 	case types.KindMysqlTime:
 		// for mysql datetime, timestamp and date type
 		t := d.GetMysqlTime()
@@ -191,13 +192,13 @@ func (encoder *Encoder) encodeDatum(sc *stmtctx.StatementContext, d types.Datum)
 		if err != nil {
 			return
 		}
-		r.data = encodeUint(r.data, v)
+		buffer = encodeUint(buffer, v)
 	case types.KindMysqlDuration:
-		r.data = encodeInt(r.data, int64(d.GetMysqlDuration().Duration))
+		buffer = encodeInt(buffer, int64(d.GetMysqlDuration().Duration))
 	case types.KindMysqlEnum:
-		r.data = encodeUint(r.data, d.GetMysqlEnum().Value)
+		buffer = encodeUint(buffer, d.GetMysqlEnum().Value)
 	case types.KindMysqlSet:
-		r.data = encodeUint(r.data, d.GetMysqlSet().Value)
+		buffer = encodeUint(buffer, d.GetMysqlSet().Value)
 	case types.KindBinaryLiteral, types.KindMysqlBit:
 		// We don't need to handle errors here since the literal is ensured to be able to store in uint64 in convertToMysqlBit.
 		var val uint64
@@ -205,11 +206,11 @@ func (encoder *Encoder) encodeDatum(sc *stmtctx.StatementContext, d types.Datum)
 		if err != nil {
 			return
 		}
-		r.data = encodeUint(r.data, val)
+		buffer = encodeUint(buffer, val)
 	case types.KindFloat32, types.KindFloat64:
-		r.data = codec.EncodeFloat(r.data, d.GetFloat64())
+		buffer = codec.EncodeFloat(buffer, d.GetFloat64())
 	case types.KindMysqlDecimal:
-		r.data, err = codec.EncodeDecimal(r.data, d.GetMysqlDecimal(), d.Length(), d.Frac())
+		buffer, err = codec.EncodeDecimal(buffer, d.GetMysqlDecimal(), d.Length(), d.Frac())
 		if sc != nil {
 			if terror.ErrorEqual(err, types.ErrTruncated) {
 				err = sc.HandleTruncate(err)
@@ -219,14 +220,15 @@ func (encoder *Encoder) encodeDatum(sc *stmtctx.StatementContext, d types.Datum)
 		}
 	case types.KindMysqlJSON:
 		j := d.GetMysqlJSON()
-		r.data = append(r.data, j.TypeCode)
-		r.data = append(r.data, j.Value...)
+		buffer = append(buffer, j.TypeCode)
+		buffer = append(buffer, j.Value...)
 	case types.KindNull:
 	case types.KindMinNotNull:
 	case types.KindMaxValue:
 	default:
 		err = errors.Errorf("unsupport encode type %d", d.Kind())
 	}
+	nBuffer = buffer
 	return
 }
 
@@ -285,62 +287,12 @@ func (encoder *Encoder) initOffsets32() {
 	}
 }
 
-var defaultStmtCtx = &stmtctx.StatementContext{
-	TimeZone: time.Local,
-}
-
 // IsNewFormat checks whether row data is in new-format.
 func IsNewFormat(rowData []byte) bool {
 	if len(rowData) == 0 {
 		return true
 	}
 	return rowData[0] == CodecVer
-}
-
-func findColID(r row, colID int64) (idx int, isNil, notFound bool) {
-	// Search the column in not-null columns array.
-	i, j := 0, int(r.numNotNullCols)
-	for i < j {
-		h := int(uint(i+j) >> 1) // avoid overflow when computing h
-		// i ≤ h < j
-		var v int64
-		if r.large {
-			v = int64(r.colIDs32[h])
-		} else {
-			v = int64(r.colIDs[h])
-		}
-		if v < colID {
-			i = h + 1
-		} else if v > colID {
-			j = h
-		} else {
-			idx = h
-			return
-		}
-	}
-
-	// Search the column in null columns array.
-	i, j = int(r.numNotNullCols), int(r.numNotNullCols+r.numNullCols)
-	for i < j {
-		h := int(uint(i+j) >> 1) // avoid overflow when computing h
-		// i ≤ h < j
-		var v int64
-		if r.large {
-			v = int64(r.colIDs32[h])
-		} else {
-			v = int64(r.colIDs[h])
-		}
-		if v < colID {
-			i = h + 1
-		} else if v > colID {
-			j = h
-		} else {
-			isNil = true
-			return
-		}
-	}
-	notFound = true
-	return
 }
 
 // encodeFromOldRow encodes a row from an old-format row.
