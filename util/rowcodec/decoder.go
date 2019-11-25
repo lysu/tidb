@@ -400,8 +400,9 @@ func (decoder *Decoder) decodeColDatum(colIdx int, colData []byte) (*types.Datum
 	return &d, nil
 }
 
+// ColInfo is row codec param to provide column info.
 type ColInfo struct {
-	ColumnId     int64
+	ColumnID     int64
 	Tp           int32
 	Flag         int32
 	IsPKHandle   bool
@@ -422,7 +423,7 @@ func GetRowBytes(columns []ColInfo, colIDs map[int64]int, handle int64, value []
 		if err != nil {
 			return nil, err
 		}
-		colID := col.ColumnId
+		colID := col.ColumnID
 		offset := colIDs[colID]
 		if col.IsPKHandle || colID == model.ExtraHandleID {
 			var handleDatum types.Datum

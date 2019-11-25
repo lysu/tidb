@@ -228,12 +228,12 @@ func (e *tableScanExec) getRowFromRange(ran kv.KeyRange) ([][]byte, error) {
 		if bytes.Compare(pair.Key, ran.StartKey) < 0 {
 			return nil, nil
 		}
-		e.seekKey = []byte(tablecodec.TruncateToRowKeyLen(kv.Key(pair.Key)))
+		e.seekKey = tablecodec.TruncateToRowKeyLen(pair.Key)
 	} else {
 		if bytes.Compare(pair.Key, ran.EndKey) >= 0 {
 			return nil, nil
 		}
-		e.seekKey = []byte(kv.Key(pair.Key).PrefixNext())
+		e.seekKey = kv.Key(pair.Key).PrefixNext()
 	}
 
 	handle, err := tablecodec.DecodeRowKey(pair.Key)
@@ -674,7 +674,7 @@ func getRowData(columns []*tipb.ColumnInfo, colIDs map[int64]int, handle int64, 
 		for i := range columns {
 			col := columns[i]
 			colInfos[i] = rowcodec.ColInfo{
-				ColumnId:   col.ColumnId,
+				ColumnID:   col.ColumnId,
 				Tp:         col.Tp,
 				Flag:       col.Flag,
 				IsPKHandle: col.GetPkHandle(),

@@ -140,8 +140,13 @@ type memTableReader struct {
 	addedRows     [][]types.Datum
 	retFieldTypes []*types.FieldType
 	colIDs        map[int64]int
+	buffer        allocBuf
+}
+
+type allocBuf struct {
 	// cache for decode handle.
 	handleBytes []byte
+	colInfo     []rowcodec.ColInfo
 }
 
 func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *memTableReader {
@@ -160,7 +165,10 @@ func buildMemTableReader(us *UnionScanExec, tblReader *TableReaderExecutor) *mem
 		addedRows:     make([][]types.Datum, 0, len(us.dirty.addedRows)),
 		retFieldTypes: retTypes(us),
 		colIDs:        colIDs,
-		handleBytes:   make([]byte, 0, 16),
+		buffer: allocBuf{
+			handleBytes: make([]byte, 0, 16),
+			colInfo:     make([]rowcodec.ColInfo, len(us.columns)),
+		},
 	}
 }
 
@@ -197,12 +205,12 @@ func (m *memTableReader) decodeRecordKeyValue(key, value []byte) ([]types.Datum,
 	if err != nil {
 		return nil, errors.Trace(err)
 	}
-	return decodeRowData(m.ctx, m.table, m.columns, m.colIDs, handle, m.handleBytes, value)
+	return decodeRowData(m.ctx, m.table, m.columns, m.colIDs, handle, value, &m.buffer)
 }
 
 // decodeRowData uses to decode row data value.
-func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, cacheBytes, value []byte) ([]types.Datum, error) {
-	values, err := getRowData(ctx.GetSessionVars().StmtCtx, tb, columns, colIDs, handle, cacheBytes, value)
+func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, value []byte, buffer *allocBuf) ([]types.Datum, error) {
+	values, err := getRowData(ctx.GetSessionVars().StmtCtx, tb, columns, colIDs, handle, value, buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -219,14 +227,14 @@ func decodeRowData(ctx sessionctx.Context, tb *model.TableInfo, columns []*model
 }
 
 // getRowData decodes raw byte slice to row data.
-func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, cacheBytes, value []byte) ([][]byte, error) {
+func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*model.ColumnInfo, colIDs map[int64]int, handle int64, value []byte, buffer *allocBuf) ([][]byte, error) {
 	pkIsHandle := tb.PKIsHandle
 	if rowcodec.IsNewFormat(value) {
-		colInfos := make([]rowcodec.ColInfo, len(columns))
+		colInfos := buffer.colInfo[:0]
 		for i := range columns {
 			col := columns[i]
 			colInfos[i] = rowcodec.ColInfo{
-				ColumnId:   col.ID,
+				ColumnID:   col.ID,
 				Tp:         int32(col.Tp),
 				Flag:       int32(col.Flag),
 				IsPKHandle: pkIsHandle && mysql.HasPriKeyFlag(col.Flag),
@@ -236,7 +244,7 @@ func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*m
 				},
 			}
 		}
-		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, cacheBytes)
+		return rowcodec.GetRowBytes(colInfos, colIDs, handle, value, buffer.handleBytes)
 	}
 	values, err := tablecodec.CutRowNew(value, colIDs)
 	if err != nil {
@@ -257,7 +265,7 @@ func getRowData(ctx *stmtctx.StatementContext, tb *model.TableInfo, columns []*m
 			} else {
 				handleDatum = types.NewIntDatum(handle)
 			}
-			handleData, err1 := codec.EncodeValue(ctx, cacheBytes, handleDatum)
+			handleData, err1 := codec.EncodeValue(ctx, buffer.handleBytes, handleDatum)
 			if err1 != nil {
 				return nil, errors.Trace(err1)
 			}
@@ -408,7 +416,10 @@ func (m *memIndexLookUpReader) getMemRows() ([][]types.Datum, error) {
 		addedRows:     make([][]types.Datum, 0, len(handles)),
 		retFieldTypes: m.retFieldTypes,
 		colIDs:        colIDs,
-		handleBytes:   make([]byte, 0, 16),
+		buffer: allocBuf{
+			colInfo:     make([]rowcodec.ColInfo, len(m.columns)),
+			handleBytes: make([]byte, 0, 16),
+		},
 	}
 
 	return memTblReader.getMemRows()
