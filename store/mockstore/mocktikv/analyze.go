@@ -145,7 +145,7 @@ func (h *rpcHandler) handleAnalyzeColumnsReq(req *coprocessor.Request, analyzeRe
 			},
 		}
 	}
-	rd := rowcodec.NewDecoder(colInfos, -1, nil)
+	rd := rowcodec.NewDecoder(colInfos, -1, nil, rowcodec.WithForceVarint)
 	e := &analyzeColumnsExec{
 		tblExec: &tableScanExec{
 			TableScan:      &tipb.TableScan{Columns: columns},

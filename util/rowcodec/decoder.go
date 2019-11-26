@@ -32,18 +32,29 @@ type Decoder struct {
 	columns     []ColInfo
 	handleColID int64
 	loc         *time.Location
+	forceVarint bool
+}
+
+// WithForceVarint is option to NewDecoder to force decode number in row as varint.
+// statistic need using varint to backwards compatibility.
+func WithForceVarint(d *Decoder) {
+	d.forceVarint = true
 }
 
 // NewDecoder creates a NewDecoder.
 // requestColIDs is the columnIDs to decode. tps is the field types for request columns.
 // origDefault is the original default value in old format, if the column ID is not found in the row,
 // the origDefault will be used.
-func NewDecoder(columns []ColInfo, handleColID int64, loc *time.Location) *Decoder {
-	return &Decoder{
+func NewDecoder(columns []ColInfo, handleColID int64, loc *time.Location, opts ...func(decoder *Decoder)) *Decoder {
+	d := &Decoder{
 		columns:     columns,
 		handleColID: handleColID,
 		loc:         loc,
 	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
 }
 
 // ColInfo is row codec param to provide column info.
@@ -338,16 +349,23 @@ func (decoder *Decoder) DecodeToBytes(outputOffset map[int64]int, handle int64, 
 		colID := col.ID
 		offset := outputOffset[colID]
 		if col.IsPKHandle || colID == model.ExtraHandleID {
-			var handleDatum types.Datum
-			if mysql.HasUnsignedFlag(uint(col.Flag)) {
-				// PK column is Unsigned.
-				handleDatum = types.NewUintDatum(uint64(handle))
+			handleData := cacheBytes
+			if decoder.forceVarint {
+				if mysql.HasUnsignedFlag(uint(col.Flag)) {
+					handleData = append(handleData, VaruintFlag)
+					handleData = codec.EncodeUvarint(handleData, uint64(handle))
+				} else {
+					handleData = append(handleData, VarintFlag)
+					handleData = codec.EncodeVarint(handleData, handle)
+				}
 			} else {
-				handleDatum = types.NewIntDatum(handle)
-			}
-			handleData, err1 := codec.EncodeValue(nil, cacheBytes, handleDatum)
-			if err1 != nil {
-				return nil, errors.Trace(err1)
+				if mysql.HasUnsignedFlag(uint(col.Flag)) {
+					handleData = append(handleData, UintFlag)
+					handleData = codec.EncodeUint(handleData, uint64(handle))
+				} else {
+					handleData = append(handleData, IntFlag)
+					handleData = codec.EncodeInt(handleData, handle)
+				}
 			}
 			values[offset] = handleData
 			continue
@@ -362,11 +380,21 @@ func (decoder *Decoder) DecodeToBytes(outputOffset map[int64]int, handle int64, 
 				buf = append(buf, CompactBytesFlag)
 				buf = codec.EncodeCompactBytes(buf, val)
 			case IntFlag:
-				buf = append(buf, VarintFlag)
-				buf = codec.EncodeVarint(buf, decodeInt(val))
+				if decoder.forceVarint {
+					buf = append(buf, VarintFlag)
+					buf = codec.EncodeVarint(buf, decodeInt(val))
+				} else {
+					buf = append(buf, IntFlag)
+					buf = codec.EncodeInt(buf, decodeInt(val))
+				}
 			case UintFlag:
-				buf = append(buf, VaruintFlag)
-				buf = codec.EncodeUvarint(buf, decodeUint(val))
+				if decoder.forceVarint {
+					buf = append(buf, VaruintFlag)
+					buf = codec.EncodeUvarint(buf, decodeUint(val))
+				} else {
+					buf = append(buf, UintFlag)
+					buf = codec.EncodeUint(buf, decodeUint(val))
+				}
 			default:
 				buf = append(buf, tp)
 				buf = append(buf, val...)
