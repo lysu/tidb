@@ -295,9 +295,12 @@ func IsNewFormat(rowData []byte) bool {
 	return rowData[0] == CodecVer
 }
 
-// encodeFromOldRow encodes a row from an old-format row.
-// only for test.
-func encodeFromOldRow(encoder *Encoder, sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
+// EncodeFromOldRow encodes a row from an old-format row.
+// this method will be used in unistore.
+func (encoder *Encoder) EncodeFromOldRow(sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
+	if len(oldRow) > 0 && oldRow[0] == CodecVer {
+		return oldRow, nil
+	}
 	encoder.reset()
 	for len(oldRow) > 1 {
 		var d types.Datum

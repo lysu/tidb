@@ -343,3 +343,17 @@ func (s *largeNullSorter) Swap(i, j int) {
 	nullCols := s.colIDs32[s.numNotNullCols:]
 	nullCols[i], nullCols[j] = nullCols[j], nullCols[i]
 }
+
+const (
+	// Length of rowkey.
+	rowKeyLen = 19
+	// Index of record flag 'r' in rowkey used by master tidb-server.
+	// The rowkey format is t{8 bytes id}_r{8 bytes handle}
+	recordPrefixIdx = 10
+)
+
+// IsRowKey determine whether key is row key.
+// this method will be used in unistore.
+func IsRowKey(key []byte) bool {
+	return len(key) == rowKeyLen && key[0] == 't' && key[recordPrefixIdx] == 'r'
+}
