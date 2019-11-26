@@ -357,3 +357,11 @@ const (
 func IsRowKey(key []byte) bool {
 	return len(key) == rowKeyLen && key[0] == 't' && key[recordPrefixIdx] == 'r'
 }
+
+// IsNewFormat checks whether row data is in new-format.
+func IsNewFormat(rowData []byte) bool {
+	if len(rowData) == 0 {
+		return true
+	}
+	return rowData[0] == CodecVer
+}

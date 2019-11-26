@@ -287,17 +287,9 @@ func (encoder *Encoder) initOffsets32() {
 	}
 }
 
-// IsNewFormat checks whether row data is in new-format.
-func IsNewFormat(rowData []byte) bool {
-	if len(rowData) == 0 {
-		return true
-	}
-	return rowData[0] == CodecVer
-}
-
 // EncodeFromOldRow encodes a row from an old-format row.
-// this method will be used in unistore.
-func (encoder *Encoder) EncodeFromOldRow(sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
+// this method will be used in test.
+func encodeFromOldRow(encoder *Encoder, sc *stmtctx.StatementContext, oldRow, buf []byte) ([]byte, error) {
 	if len(oldRow) > 0 && oldRow[0] == CodecVer {
 		return oldRow, nil
 	}
