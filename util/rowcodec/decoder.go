@@ -425,3 +425,55 @@ func (decoder *Decoder) DecodeToBytes(outputOffset map[int64]int, handle int64, 
 	}
 	return values, nil
 }
+
+// ColumnIsNull returns if the column value is null. Mainly used for count column aggregation.
+// this method will used in unistore.
+func (decoder *Decoder) ColumnIsNull(rowData []byte, colID int64, defaultVal []byte) (bool, error) {
+	err := decoder.setRowData(rowData)
+	if err != nil {
+		return false, err
+	}
+	// Search the column in not-null columns array.
+	i, j := 0, int(decoder.numNotNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if decoder.large {
+			v = int64(decoder.colIDs32[h])
+		} else {
+			v = int64(decoder.colIDs[h])
+		}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			return false, nil
+		}
+	}
+	return decoder.isNull(colID, defaultVal), nil
+}
+
+func (decoder *Decoder) isNull(colID int64, defaultVal []byte) bool {
+	// Search the column in null columns array.
+	i, j := int(decoder.numNotNullCols), int(decoder.numNotNullCols+decoder.numNullCols)
+	for i < j {
+		h := int(uint(i+j) >> 1) // avoid overflow when computing h
+		// i ≤ h < j
+		var v int64
+		if decoder.large {
+			v = int64(decoder.colIDs32[h])
+		} else {
+			v = int64(decoder.colIDs[h])
+		}
+		if v < colID {
+			i = h + 1
+		} else if v > colID {
+			j = h
+		} else {
+			return true
+		}
+	}
+	return defaultVal == nil
+}
