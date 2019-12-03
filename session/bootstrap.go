@@ -349,6 +349,7 @@ const (
 	version33 = 33
 	version34 = 34
 	version35 = 35
+	version37 = 37
 )
 
 func checkBootstrapped(s Session) (bool, error) {
@@ -547,6 +548,10 @@ func upgrade(s Session) {
 
 	if ver < version35 {
 		upgradeToVer35(s)
+	}
+
+	if ver < version37 {
+		upgradeToVer37(s)
 	}
 
 	updateBootstrapVer(s)
@@ -862,6 +867,13 @@ func upgradeToVer34(s Session) {
 func upgradeToVer35(s Session) {
 	sql := fmt.Sprintf("UPDATE HIGH_PRIORITY %s.%s SET VARIABLE_NAME = '%s' WHERE VARIABLE_NAME = 'tidb_back_off_weight'",
 		mysql.SystemDB, mysql.GlobalVariablesTable, variable.TiDBBackOffWeight)
+	mustExecute(s, sql)
+}
+
+func upgradeToVer37(s Session) {
+	// when upgrade from old tidb and no 'tidb_enable_window_function' in GLOBAL_VARIABLES, init it with 0.
+	sql := fmt.Sprintf("INSERT IGNORE INTO  %s.%s (`VARIABLE_NAME`, `VARIABLE_VALUE`) VALUES ('%s', '%d')",
+		mysql.SystemDB, mysql.GlobalVariablesTable, variable.TiDBEnableWindowFunction, 0)
 	mustExecute(s, sql)
 }
 
