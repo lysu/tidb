@@ -318,15 +318,14 @@ func (lr *LockResolver) resolveLocks(bo *Backoffer, callerStartTS uint64, locks 
 		if status.ttl == 0 {
 			tikvLockResolverCountWithExpired.Inc()
 			// If the lock is committed or rollbacked, resolve lock.
-			cleanRegions, exists := cleanTxns[l.TxnID]
-			if !exists {
-				cleanRegions = make(map[RegionVerID]struct{})
-				cleanTxns[l.TxnID] = cleanRegions
-			}
-
 			if l.LockType == kvrpcpb.Op_PessimisticLock {
-				err = lr.resolvePessimisticLock(bo, l, cleanRegions)
+				err = lr.resolvePessimisticLock(bo, l)
 			} else {
+				cleanRegions, exists := cleanTxns[l.TxnID]
+				if !exists {
+					cleanRegions = make(map[RegionVerID]struct{})
+					cleanTxns[l.TxnID] = cleanRegions
+				}
 				err = lr.resolveLock(bo, l, status, cleanRegions)
 			}
 			if err != nil {
@@ -622,15 +621,12 @@ func (lr *LockResolver) resolveLock(bo *Backoffer, l *Lock, status TxnStatus, cl
 	}
 }
 
-func (lr *LockResolver) resolvePessimisticLock(bo *Backoffer, l *Lock, cleanRegions map[RegionVerID]struct{}) error {
+func (lr *LockResolver) resolvePessimisticLock(bo *Backoffer, l *Lock) error {
 	tikvLockResolverCountWithResolveLocks.Inc()
 	for {
 		loc, err := lr.store.GetRegionCache().LocateKey(bo, l.Key)
 		if err != nil {
 			return errors.Trace(err)
-		}
-		if _, ok := cleanRegions[loc.Region]; ok {
-			return nil
 		}
 		forUpdateTS := l.LockForUpdateTS
 		if forUpdateTS == 0 {
