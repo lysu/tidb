@@ -145,6 +145,8 @@ const (
 	TableStatementsSummary = "STATEMENTS_SUMMARY"
 	// TableStatementsSummaryHistory is the string constant of statements summary history table.
 	TableStatementsSummaryHistory = "STATEMENTS_SUMMARY_HISTORY"
+	// TableSessionTracing is the string constant of tidb_session_tracing table.
+	TableSessionTracing = "TIDB_SESSION_TRACING"
 )
 
 var tableIDMap = map[string]int64{
@@ -210,6 +212,7 @@ var tableIDMap = map[string]int64{
 	TableStatementsSummaryHistory:           autoid.InformationSchemaDBID + 60,
 	ClusterTableStatementsSummary:           autoid.InformationSchemaDBID + 61,
 	ClusterTableStatementsSummaryHistory:    autoid.InformationSchemaDBID + 62,
+	TableSessionTracing:                     autoid.InformationSchemaDBID + 63,
 }
 
 type columnInfo struct {
@@ -1103,6 +1106,13 @@ var tableStatementsSummaryCols = []columnInfo{
 	{name: "PLAN", tp: mysql.TypeBlob, size: types.UnspecifiedLength, comment: "Sampled execution plan"},
 }
 
+var tableSessionTracing = []columnInfo{
+	{name: "TIME", tp: mysql.TypeVarchar, size: 64, flag: mysql.NotNullFlag},
+	{name: "EVENT", tp: mysql.TypeVarchar, size: 256, flag: mysql.NotNullFlag},
+	{name: "TAGS", tp: mysql.TypeVarchar, size: 256, flag: mysql.NotNullFlag},
+	{name: "SPAN", tp: mysql.TypeVarchar, size: 256, flag: mysql.NotNullFlag},
+}
+
 // GetShardingInfo returns a nil or description string for the sharding information of given TableInfo.
 // The returned description string may be:
 //  - "NOT_SHARDED": for tables that SHARD_ROW_ID_BITS is not specified.
@@ -1396,6 +1406,7 @@ var tableNameToColumns = map[string][]columnInfo{
 	TableSequences:                          tableSequencesCols,
 	TableStatementsSummary:                  tableStatementsSummaryCols,
 	TableStatementsSummaryHistory:           tableStatementsSummaryCols,
+	TableSessionTracing:                     tableSessionTracing,
 }
 
 func createInfoSchemaTable(_ autoid.Allocators, meta *model.TableInfo) (table.Table, error) {

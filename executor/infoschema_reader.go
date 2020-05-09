@@ -132,6 +132,8 @@ func (e *memtableRetriever) retrieve(ctx context.Context, sctx sessionctx.Contex
 			infoschema.ClusterTableStatementsSummary,
 			infoschema.ClusterTableStatementsSummaryHistory:
 			err = e.setDataForStatementsSummary(sctx, e.table.Name.O)
+		case infoschema.TableSessionTracing:
+			err = e.setDataForSessionTracing(sctx)
 		}
 		if err != nil {
 			return nil, err
@@ -1626,5 +1628,10 @@ func (e *memtableRetriever) setDataForStatementsSummary(ctx sessionctx.Context, 
 		}
 		e.rows = rows
 	}
+	return nil
+}
+
+func (e *memtableRetriever) setDataForSessionTracing(sctx sessionctx.Context) error {
+	e.rows = sctx.GetSessionVars().SessionTracing.GetResultRows()
 	return nil
 }

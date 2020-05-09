@@ -15,9 +15,11 @@ package tracing
 
 import (
 	"context"
-
+	"fmt"
 	"github.com/opentracing/basictracer-go"
 	"github.com/opentracing/opentracing-go"
+	"github.com/pingcap/tidb/types"
+	"github.com/pingcap/tidb/util/logutil"
 )
 
 // TiDBTrace is set as Baggage on traces which are used for tidb tracing.
@@ -86,11 +88,51 @@ func (t *SessionTracing) Start() {
 func (t *SessionTracing) Stop() {
 	t.Enable = false
 	t.RootCtx = nil
-	t.span.Finish()
+	if t.span != nil {
+		t.span.Finish()
+	}
 }
 
 func (t *SessionTracing) Close() {
 	t.Enable = false
 	t.RootCtx = nil
 	t.span = nil
+	t.recorder = nil
+}
+
+func (t *SessionTracing) GetResultRows() [][]types.Datum {
+	const timeFormat = "15:04:05.000000"
+	var rows [][]types.Datum
+	if t.span != nil {
+		allSpans := t.recorder.GetSpans()
+		for rIdx := range allSpans {
+			span := &allSpans[rIdx]
+			record := types.MakeDatums(
+				span.Start.Format(timeFormat),            // TIME
+				"--- start span "+span.Operation+" ----", // EVENT
+				"",             // TAGS
+				span.Operation, // SPAN
+			)
+			rows = append(rows, record)
+
+			var tags string
+			if len(span.Tags) > 0 {
+				tags = fmt.Sprintf("%v", span.Tags)
+			}
+			for _, l := range span.Logs {
+				for _, field := range l.Fields {
+					if field.Key() == logutil.TraceEventKey {
+						record := types.MakeDatums(
+							l.Timestamp.Format(timeFormat), // TIME
+							field.Value().(string),         // EVENT
+							tags,                           // TAGS
+							span.Operation,                 // SPAN
+						)
+						rows = append(rows, record)
+					}
+				}
+			}
+		}
+	}
+	return rows
 }
