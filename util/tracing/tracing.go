@@ -65,3 +65,32 @@ func ChildSpanFromContxt(ctx context.Context, opName string) (opentracing.Span, 
 	}
 	return noopSpan(), ctx
 }
+
+type SessionTracing struct {
+	Enable   bool
+	RootCtx  context.Context
+	span     opentracing.Span
+	recorder *basictracer.InMemorySpanRecorder
+}
+
+func (t *SessionTracing) Start() {
+	if t.Enable {
+		return
+	}
+	t.Enable = true
+	t.recorder = basictracer.NewInMemoryRecorder()
+	t.span = basictracer.New(t.recorder).StartSpan("start session tracing")
+	t.RootCtx = opentracing.ContextWithSpan(context.TODO(), t.span)
+}
+
+func (t *SessionTracing) Stop() {
+	t.Enable = false
+	t.RootCtx = nil
+	t.span.Finish()
+}
+
+func (t *SessionTracing) Close() {
+	t.Enable = false
+	t.RootCtx = nil
+	t.span = nil
+}

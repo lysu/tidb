@@ -671,6 +671,7 @@ func (cc *clientConn) Run(ctx context.Context) {
 			terror.Log(err)
 		}
 	}()
+	connCtx := ctx
 	// Usually, client connection status changes between [dispatching] <=> [reading].
 	// When some event happens, server may notify this client connection by setting
 	// the status to special values, for example: kill or graceful shutdown.
@@ -740,6 +741,11 @@ func (cc *clientConn) Run(ctx context.Context) {
 		}
 		cc.addMetrics(data[0], startTime, err)
 		cc.pkt.sequence = 0
+		if cc.ctx.GetSessionVars().SessionTracing.Enable {
+			ctx = logutil.WithConnID(cc.ctx.GetSessionVars().SessionTracing.RootCtx, cc.connectionID)
+		} else {
+			ctx = connCtx
+		}
 	}
 }
 

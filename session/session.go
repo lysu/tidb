@@ -1582,6 +1582,7 @@ func (s *session) Close() {
 	s.RollbackTxn(ctx)
 	if s.sessionVars != nil {
 		s.sessionVars.WithdrawAllPreparedStmt()
+		s.sessionVars.SessionTracing.Close()
 	}
 }
 

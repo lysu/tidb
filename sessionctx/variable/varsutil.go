@@ -157,6 +157,8 @@ func GetSessionOnlySysVars(s *SessionVars, key string) (string, bool, error) {
 		return BoolToIntStr(s.PrevFoundInPlanCache), true, nil
 	case TiDBEnableCollectExecutionInfo:
 		return BoolToIntStr(config.GetGlobalConfig().EnableCollectExecutionInfo), true, nil
+	case TiDBTracing:
+		return BoolToIntStr(s.Tracing), true, nil
 	}
 	sVal, ok := s.GetSystemVar(key)
 	if ok {
@@ -439,7 +441,7 @@ func ValidateSetSystemVar(vars *SessionVars, name string, value string, scope Sc
 		BinlogDirectNonTransactionalUpdates, SQLQuoteShowCreate, AutomaticSpPrivileges,
 		RelayLogPurge, SQLAutoIsNull, QueryCacheWlockInvalidate, ValidatePasswordCheckUserName,
 		SuperReadOnly, BinlogOrderCommits, MasterVerifyChecksum, BinlogRowQueryLogEvents, LogSlowSlaveStatements,
-		LogSlowAdminStatements, LogQueriesNotUsingIndexes, Profiling:
+		LogSlowAdminStatements, LogQueriesNotUsingIndexes, Profiling, TiDBTracing:
 		if strings.EqualFold(value, "ON") {
 			return "1", nil
 		} else if strings.EqualFold(value, "OFF") {

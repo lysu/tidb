@@ -171,6 +171,9 @@ const (
 
 	// TiDBFoundInPlanCache indicates whether the last statement was found in plan cache
 	TiDBFoundInPlanCache = "last_plan_from_cache"
+
+	// TiDBTracing is used to enable/disable tracing in session.
+	TiDBTracing = "tidb_tracing"
 )
 
 // TiDB system variable names that both in session and global scope.
@@ -487,6 +490,7 @@ const (
 	DefTiDBMetricSchemaRangeDuration   = 60 // 60s
 	DefTiDBFoundInPlanCache            = false
 	DefTidbEnableCollectExecutionInfo  = false
+	DefTiDBTracing                     = false
 )
 
 // Process global variables.

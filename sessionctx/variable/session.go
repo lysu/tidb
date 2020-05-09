@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"github.com/pingcap/tidb/util/tracing"
 	"math"
 	"sort"
 	"strconv"
@@ -600,8 +601,14 @@ type SessionVars struct {
 	// PrevFoundInPlanCache indicates whether the last statement was found in plan cache.
 	PrevFoundInPlanCache bool
 
-	// OptimizerUseInvisibleIndexes indicates whether optimizer can use invisible index
+	// OptimizerUseInvisibleIndexes indicates whether optimizer can use invisible index.
 	OptimizerUseInvisibleIndexes bool
+
+	// Tracing indicates whether enable tracing.
+	Tracing bool
+
+	// SessionTracing is used to collect tracing data in session level.
+	SessionTracing tracing.SessionTracing
 }
 
 // PreparedParams contains the parameters of the current prepared statement when executing it.
@@ -1261,6 +1268,13 @@ func (s *SessionVars) SetSystemVar(name string, val string) error {
 		s.FoundInPlanCache = TiDBOptOn(val)
 	case TiDBEnableCollectExecutionInfo:
 		config.GetGlobalConfig().EnableCollectExecutionInfo = TiDBOptOn(val)
+	case TiDBTracing:
+		s.Tracing = TiDBOptOn(val)
+		if s.Tracing {
+			s.SessionTracing.Start()
+		} else {
+			s.SessionTracing.Stop()
+		}
 	}
 	s.systems[name] = val
 	return nil
