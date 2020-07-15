@@ -174,7 +174,7 @@ var (
 )
 
 // StoreQueryFeedback will merges the feedback into stats collector.
-func (s *SessionStatsCollector) StoreQueryFeedback(feedback interface{}, h *Handle) error {
+func (s *SessionStatsCollector) StoreQueryFeedback(sql string, feedback interface{}, h *Handle) error {
 	q := feedback.(*statistics.QueryFeedback)
 	// TODO: If the error rate is small or actual scan count is small, we do not need to store the feed back.
 	if !q.Valid || q.Hist == nil {
@@ -188,7 +188,7 @@ func (s *SessionStatsCollector) StoreQueryFeedback(feedback interface{}, h *Hand
 	if rate >= MinLogErrorRate && (q.Actual() >= MinLogScanCount || q.Expected >= MinLogScanCount) {
 		metrics.SignificantFeedbackCounter.Inc()
 		if log.GetLevel() == zap.DebugLevel {
-			h.logDetailedInfo(q)
+			h.logDetailedInfo(sql, q)
 		}
 	}
 	metrics.StatsInaccuracyRate.Observe(rate)
@@ -791,7 +791,7 @@ func logForIndexRange(idx *statistics.Index, ran *ranger.Range, actual int64, fa
 		int64((highCount-lowCount)*factor), formatBuckets(&idx.Histogram, lowBkt, highBkt, len(idx.Info.Columns)))
 }
 
-func logForIndex(prefix string, t *statistics.Table, idx *statistics.Index, ranges []*ranger.Range, actual []int64, factor float64) {
+func logForIndex(sql string, prefix string, t *statistics.Table, idx *statistics.Index, ranges []*ranger.Range, actual []int64, factor float64, verFunc func() int64) {
 	sc := &stmtctx.StatementContext{TimeZone: time.UTC}
 	if idx.CMSketch == nil || idx.StatsVer != statistics.Version1 {
 		for i, ran := range ranges {
@@ -819,6 +819,10 @@ func logForIndex(prefix string, t *statistics.Table, idx *statistics.Index, rang
 			LowVal:  []types.Datum{ran.LowVal[rangePosition]},
 			HighVal: []types.Datum{ran.HighVal[rangePosition]},
 		}
+		if rangePosition >= len(idx.Info.Columns) {
+			panic(fmt.Sprintf("sql: %s, table: %s, idx: %s, has columns: [%v], but got range: %s, cur-ver: %d",
+				sql, idx.Info.Table.String(), idx.Info.Name.String(), idx.Info.Columns, ran.String(), verFunc()))
+		}
 		colName := idx.Info.Columns[rangePosition].Name.L
 		// prefer index stats over column stats
 		if idxHist := t.IndexStartWithColumn(colName); idxHist != nil && idxHist.Histogram.Len() > 0 {
@@ -845,7 +849,7 @@ func logForIndex(prefix string, t *statistics.Table, idx *statistics.Index, rang
 	}
 }
 
-func (h *Handle) logDetailedInfo(q *statistics.QueryFeedback) {
+func (h *Handle) logDetailedInfo(sql string, q *statistics.QueryFeedback) {
 	t, ok := h.statsCache.Load().(statsCache).tables[q.PhysicalID]
 	if !ok {
 		return
@@ -866,7 +870,13 @@ func (h *Handle) logDetailedInfo(q *statistics.QueryFeedback) {
 		if idx == nil || idx.Histogram.Len() == 0 {
 			return
 		}
-		logForIndex(logPrefix, t, idx, ranges, actual, idx.GetIncreaseFactor(t.Count))
+		logForIndex(sql, logPrefix, t, idx, ranges, actual, idx.GetIncreaseFactor(t.Count), func() int64 {
+			var ver int64
+			h.mu.Lock()
+			ver = h.mu.schemaVersion
+			h.mu.Unlock()
+			return ver
+		})
 	} else {
 		c := t.Columns[q.Hist.ID]
 		if c == nil || c.Histogram.Len() == 0 {

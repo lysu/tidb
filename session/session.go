@@ -346,7 +346,11 @@ func (s *session) StoreQueryFeedback(feedback interface{}) {
 			metrics.StoreQueryFeedbackCounter.WithLabelValues(metrics.LblError).Inc()
 			return
 		}
-		err = s.statsCollector.StoreQueryFeedback(feedback, do.StatsHandle())
+		var sql string
+		if s.sessionVars.StmtCtx != nil {
+			sql = s.sessionVars.StmtCtx.OriginalSQL
+		}
+		err = s.statsCollector.StoreQueryFeedback(sql, feedback, do.StatsHandle())
 		if err != nil {
 			logutil.BgLogger().Debug("store query feedback", zap.Error(err))
 			metrics.StoreQueryFeedbackCounter.WithLabelValues(metrics.LblError).Inc()
