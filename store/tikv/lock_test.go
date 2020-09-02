@@ -27,18 +27,28 @@ import (
 	"github.com/pingcap/failpoint"
 	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"github.com/pingcap/tidb/kv"
+	"github.com/pingcap/tidb/store/mockstore/cluster"
+	"github.com/pingcap/tidb/store/mockstore/unistore"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
 )
 
 type testLockSuite struct {
 	OneByOneSuite
-	store *tikvStore
+	store   *tikvStore
+	cluster cluster.Cluster
+	region1 uint64
 }
 
 var _ = Suite(&testLockSuite{})
 
 func (s *testLockSuite) SetUpTest(c *C) {
-	s.store = NewTestStore(c).(*tikvStore)
+	client, pdClient, cluster, err := unistore.New("")
+	c.Assert(err, IsNil)
+	s.cluster = cluster
+	_, _, s.region1 = unistore.BootstrapWithSingleStore(cluster)
+	store, err := NewTestTiKVStore(client, pdClient, nil, nil, 0)
+	c.Assert(err, IsNil)
+	s.store = store.(*tikvStore)
 }
 
 func (s *testLockSuite) TearDownTest(c *C) {
@@ -490,6 +500,30 @@ func (s *testLockSuite) TestNewLockZeroTTL(c *C) {
 func init() {
 	// Speed up tests.
 	oracleUpdateInterval = 2
+}
+
+func (s *testLockSuite) TestPrewriteTwoRegion(c *C) {
+	// Split region1 ['' - 'z'] to region1 and region2 ['' - 'm' - 'z']
+	region2, peerID := s.cluster.AllocID(), s.cluster.AllocID()
+	s.cluster.Split(s.region1, region2, []byte("m"), []uint64{peerID}, peerID)
+
+	// Check 'a' in region1 and 'n' in region2
+	k1, err := s.store.regionCache.LocateKey(NewNoopBackoff(context.Background()), []byte{'a'})
+	c.Assert(err, IsNil)
+	c.Assert(k1.Region.id, Equals, s.region1)
+	k2, err := s.store.regionCache.LocateKey(NewNoopBackoff(context.Background()), []byte{'n'})
+	c.Assert(err, IsNil)
+	c.Assert(k2.Region.id, Equals, region2)
+
+	// put 'a','n' and commit
+	txn, err := s.store.Begin()
+	c.Assert(err, IsNil)
+	err = txn.Set(kv.Key("a"), []byte("1"))
+	c.Assert(err, IsNil)
+	err = txn.Set(kv.Key("n"), []byte("2"))
+	c.Assert(err, IsNil)
+	err = txn.Commit(context.Background()) // 2 PUT in region1 and region2
+	c.Assert(err, IsNil)
 }
 
 func (s *testLockSuite) TestZeroMinCommitTS(c *C) {
