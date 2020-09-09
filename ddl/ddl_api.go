@@ -1577,7 +1577,7 @@ func buildTableInfoWithStmt(ctx sessionctx.Context, s *ast.CreateTableStmt, dbCh
 		return nil, errors.Trace(err)
 	}
 
-	if err = handleTableOptions(s.Options, tbInfo); err != nil {
+	if err = handleTableOptions(ctx, s.Options, tbInfo); err != nil {
 		return nil, errors.Trace(err)
 	}
 	return tbInfo, nil
@@ -2042,8 +2042,16 @@ func (d *ddl) handleAutoIncID(tbInfo *model.TableInfo, schemaID int64, newEnd in
 	return nil
 }
 
+func tryOldPartitionImplementation(sctx sessionctx.Context) bool {
+	_, ok := sctx.GetSessionVars().Users["try_old_partition_implementation"]
+	return ok
+}
+
 // handleTableOptions updates tableInfo according to table options.
-func handleTableOptions(options []*ast.TableOption, tbInfo *model.TableInfo) error {
+func handleTableOptions(ctx sessionctx.Context, options []*ast.TableOption, tbInfo *model.TableInfo) error {
+	if tbInfo.Partition != nil && len(tbInfo.Partition.Definitions) > 0 && tryOldPartitionImplementation(ctx) {
+		tbInfo.ForceOldPartition = true
+	}
 	for _, op := range options {
 		switch op.Tp {
 		case ast.TableOptionAutoIncrement:

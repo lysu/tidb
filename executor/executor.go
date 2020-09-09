@@ -942,7 +942,6 @@ func (e *SelectLockExec) Next(ctx context.Context, req *chunk.Chunk) error {
 	} else if e.Lock.LockType == ast.SelectLockForUpdateWaitN {
 		lockWaitTime = int64(e.Lock.WaitSec) * 1000
 	}
-
 	return doLockKeys(ctx, e.ctx, newLockCtx(e.ctx.GetSessionVars(), lockWaitTime), e.keys...)
 }
 
@@ -1665,6 +1664,7 @@ func ResetContextOfStmt(ctx sessionctx.Context, s ast.StmtNode) (err error) {
 	if globalConfig.EnableCollectExecutionInfo {
 		sc.RuntimeStatsColl = execdetails.NewRuntimeStatsColl()
 	}
+	sc.CanRuntimePrune = true
 
 	sc.TblInfo2UnionScan = make(map[*model.TableInfo]bool)
 	errCount, warnCount := vars.StmtCtx.NumErrorWarnings()

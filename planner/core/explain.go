@@ -954,5 +954,5 @@ func (p *PhysicalMemTable) OperatorInfo(_ bool) string {
 
 func tryOldPartitionImplementation(sctx sessionctx.Context) bool {
 	_, ok := sctx.GetSessionVars().Users["try_old_partition_implementation"]
-	return ok
+	return ok || !sctx.GetSessionVars().StmtCtx.CanRuntimePrune
 }
