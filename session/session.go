@@ -2112,6 +2112,7 @@ var builtinGlobalVariable = []string{
 	variable.TiDBStoreLimit,
 	variable.TiDBAllowAutoRandExplicitInsert,
 	variable.TiDBEnableClusteredIndex,
+	variable.TiDBPartitionPruneMode,
 	variable.TiDBSlowLogMasking,
 	variable.TiDBLogDesensitization,
 	variable.TiDBEnableTelemetry,
