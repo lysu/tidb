@@ -1115,6 +1115,7 @@ func (h *Handle) SaveExtendedStatsToStorage(tableID int64, extStats *statistics.
 	return execSQLs(ctx, exec, sqls)
 }
 
+// RefreshVars uses to pull PartitionPruneMethod vars from kv storage.
 func (h *Handle) RefreshVars() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
