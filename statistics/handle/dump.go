@@ -64,7 +64,7 @@ func dumpJSONCol(hist *statistics.Histogram, CMSketch *statistics.CMSketch) *jso
 // DumpStatsToJSON dumps statistic to json.
 func (h *Handle) DumpStatsToJSON(dbName string, tableInfo *model.TableInfo, historyStatsExec sqlexec.RestrictedSQLExecutor) (*JSONTable, error) {
 	pi := tableInfo.GetPartitionInfo()
-	if pi == nil || h.CanRuntimePrune(tableInfo.ID, tableInfo.Partition.Definitions[0].ID) {
+	if pi == nil || h.UseDynamicPrune() {
 		return h.tableStatsToJSON(dbName, tableInfo, tableInfo.ID, historyStatsExec)
 	}
 	jsonTbl := &JSONTable{

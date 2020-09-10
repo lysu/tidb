@@ -1099,6 +1099,10 @@ func (do *Domain) loadStatsWorker() {
 	for {
 		select {
 		case <-loadTicker.C:
+			err = statsHandle.RefreshVars()
+			if err != nil {
+				logutil.BgLogger().Debug("refresh variables failed", zap.Error(err))
+			}
 			err = statsHandle.Update(do.InfoSchema())
 			if err != nil {
 				logutil.BgLogger().Debug("update stats info failed", zap.Error(err))

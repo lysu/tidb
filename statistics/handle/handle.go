@@ -33,6 +33,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/sessionctx"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/statistics"
 	"github.com/pingcap/tidb/store/tikv/oracle"
 	"github.com/pingcap/tidb/table"
@@ -87,6 +88,10 @@ type Handle struct {
 	feedback *statistics.QueryFeedbackMap
 
 	lease atomic2.Duration
+
+	partitionPruneMode variable.PartitionPruneMode
+
+	pruneMode atomic2.String
 }
 
 // Clear the statsCache, only for test.
@@ -275,24 +280,9 @@ func (h *Handle) GetPartitionStats(tblInfo *model.TableInfo, pid int64) *statist
 	return tbl
 }
 
-// CanRuntimePrune indicates whether tbl support runtime prune for table and first partition id.
-func (h *Handle) CanRuntimePrune(tid, p0Id int64) bool {
-	if h == nil {
-		return false
-	}
-	if tid == p0Id {
-		return false
-	}
-	statsCache := h.statsCache.Load().(statsCache)
-	_, tblExists := statsCache.tables[tid]
-	if tblExists {
-		return true
-	}
-	_, partExists := statsCache.tables[p0Id]
-	if !partExists {
-		return true
-	}
-	return false
+// UseDynamicPrune indicates whether tbl support runtime prune for table and first partition id.
+func (h *Handle) UseDynamicPrune() bool {
+	return h.pruneMode.Load() == string(variable.DynamicOnly)
 }
 
 func (h *Handle) updateStatsCache(newCache statsCache) {
@@ -1123,4 +1113,15 @@ func (h *Handle) SaveExtendedStatsToStorage(tableID int64, extStats *statistics.
 		sqls = append(sqls, fmt.Sprintf("UPDATE mysql.stats_meta SET version = %d WHERE table_id = %d", version, tableID))
 	}
 	return execSQLs(ctx, exec, sqls)
+}
+
+func (h *Handle) RefreshVars() error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	pruneMode, err := h.mu.ctx.GetSessionVars().GlobalVarsAccessor.GetGlobalSysVar(variable.TiDBPartitionPruneMode)
+	if err != nil {
+		return err
+	}
+	h.pruneMode.Store(pruneMode)
+	return nil
 }

@@ -546,7 +546,7 @@ func (h *Handle) handleSingleHistogramUpdate(is infoschema.InfoSchema, rows []ch
 		return nil
 	}
 	var tbl *statistics.Table
-	if table.Meta().GetPartitionInfo() == nil || h.CanRuntimePrune(table.Meta().ID, table.Meta().Partition.Definitions[0].ID) {
+	if table.Meta().GetPartitionInfo() == nil || h.UseDynamicPrune() {
 		tbl = h.GetTableStats(table.Meta())
 	} else {
 		tbl = h.GetPartitionStats(table.Meta(), physicalTableID)
@@ -707,7 +707,7 @@ func (h *Handle) HandleAutoAnalyze(is infoschema.InfoSchema) {
 			tblInfo := tbl.Meta()
 			pi := tblInfo.GetPartitionInfo()
 			tblName := "`" + db + "`.`" + tblInfo.Name.O + "`"
-			if pi == nil || h.CanRuntimePrune(tblInfo.ID, tblInfo.Partition.Definitions[0].ID) {
+			if pi == nil || h.UseDynamicPrune() {
 				statsTbl := h.GetTableStats(tblInfo)
 				sql := fmt.Sprintf("analyze table %s", tblName)
 				analyzed := h.autoAnalyzeTable(tblInfo, statsTbl, start, end, autoAnalyzeRatio, sql)
@@ -716,7 +716,7 @@ func (h *Handle) HandleAutoAnalyze(is infoschema.InfoSchema) {
 				}
 				continue
 			}
-			if !h.CanRuntimePrune(tblInfo.ID, tblInfo.Partition.Definitions[0].ID) {
+			if !h.UseDynamicPrune() {
 				for _, def := range pi.Definitions {
 					sql := fmt.Sprintf("analyze table %s partition `%s`", tblName, def.Name.O)
 					statsTbl := h.GetPartitionStats(tblInfo, def.ID)

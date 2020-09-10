@@ -2800,7 +2800,7 @@ func getStatsTable(ctx sessionctx.Context, tblInfo *model.TableInfo, pid int64) 
 	}
 
 	var statsTbl *statistics.Table
-	if pid == tblInfo.ID || domain.CanRuntimePruneTbl(ctx, tblInfo) {
+	if pid == tblInfo.ID || ctx.GetSessionVars().UseDynamicPartitionPrune() {
 		statsTbl = statsHandle.GetTableStats(tblInfo)
 	} else {
 		statsTbl = statsHandle.GetPartitionStats(tblInfo, pid)
@@ -2919,7 +2919,7 @@ func (b *PlanBuilder) buildDataSource(ctx context.Context, tn *ast.TableName, as
 		columns = tbl.Cols()
 	}
 	var statisticTable *statistics.Table
-	if _, ok := tbl.(table.PartitionedTable); !ok || domain.CanRuntimePruneTbl(b.ctx, tbl.Meta()) {
+	if _, ok := tbl.(table.PartitionedTable); !ok || b.ctx.GetSessionVars().UseDynamicPartitionPrune() {
 		statisticTable = getStatsTable(b.ctx, tbl.Meta(), tbl.Meta().ID)
 	}
 

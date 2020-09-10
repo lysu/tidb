@@ -55,7 +55,7 @@ func (h *Handle) HandleDDLEvent(t *util.Event) error {
 
 func (h *Handle) getPhysicalIDs(tblInfo *model.TableInfo) []int64 {
 	pi := tblInfo.GetPartitionInfo()
-	if pi == nil || (!tblInfo.ForceOldPartition && h.CanRuntimePrune(tblInfo.ID, pi.Definitions[0].ID)) {
+	if pi == nil || (!tblInfo.ForceOldPartition && h.UseDynamicPrune()) {
 		return []int64{tblInfo.ID}
 	}
 	ids := make([]int64, 0, len(pi.Definitions))
