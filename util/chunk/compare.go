@@ -168,6 +168,84 @@ func cmpJSON(l Row, lCol int, r Row, rCol int) int {
 	return json.CompareBinary(lJ, rJ)
 }
 
+func NewTestC() *Chunk {
+	return &Chunk{
+		sel: nil,
+		columns: []*Column{
+			{
+				length: 6,
+				nullBitmap: []uint8{
+					63,
+				},
+				offsets: nil,
+				data: []uint8{
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					127,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					128,
+					3,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					128,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					0,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+				},
+				elemBuf: []uint8{
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+					255,
+				},
+			},
+		},
+		numVirtualRows: 0,
+		capacity:       0,
+		requiredRows:   0,
+	}
+}
+
 // Compare compares the value with ad.
 // We assume that the collation information of the column is the same with the datum.
 func Compare(row Row, colIdx int, ad *types.Datum) int {

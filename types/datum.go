@@ -70,6 +70,26 @@ type Datum struct {
 	x         interface{} // x hold all other types.
 }
 
+func NewD(
+	k byte, // datum kind.
+	collation string, // collation hold the collation information for string value.
+	decimal uint16, // decimal can hold uint16 values.
+	length uint32, // length can hold uint32 values.
+	i int64, // i can hold int64 uint64 float64 values.
+	b []byte, // b can hold string or []byte values.
+	x interface{}, // x hold all other types.
+) Datum {
+	return Datum{
+		k:         k,
+		collation: collation,
+		decimal:   decimal,
+		length:    length,
+		i:         i,
+		b:         b,
+		x:         x,
+	}
+}
+
 // Clone create a deep copy of the Datum.
 func (d *Datum) Clone() *Datum {
 	ret := new(Datum)
