@@ -1556,7 +1556,7 @@ func (b *PlanBuilder) buildAnalyzeTable(as *ast.AnalyzeTableStmt, opts map[ast.A
 					IndexInfo:        idx,
 					analyzeInfo:      info,
 					TblInfo:          tbl.TableInfo,
-					SampleLocalIndex: true,
+					SampleLocalIndex: len(physicalIDs) > 1,
 				})
 			}
 		}

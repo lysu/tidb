@@ -17,6 +17,7 @@ import (
 	. "github.com/pingcap/check"
 	"github.com/pingcap/parser/model"
 	"github.com/pingcap/tidb/sessionctx/stmtctx"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"github.com/pingcap/tidb/types"
 	"github.com/pingcap/tidb/util/testkit"
 )
@@ -188,6 +189,7 @@ func (s *testStatsSuite) TestDDLPartition(c *C) {
 	{
 		testKit.MustExec("use test")
 		testKit.MustExec("drop table if exists t")
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		createTable := `CREATE TABLE t (a int, b int, primary key(a), index idx(b))
 PARTITION BY RANGE ( a ) (
 		PARTITION p0 VALUES LESS THAN (6),
@@ -248,7 +250,7 @@ PARTITION BY RANGE ( a ) (
 	}
 
 	{
-		testKit.MustExec("set @try_old_partition_implementation=1")
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		testKit.MustExec("use test")
 		testKit.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b int, primary key(a), index idx(b))

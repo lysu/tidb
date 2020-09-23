@@ -368,6 +368,8 @@ func (s *testInfoschemaTableSerialSuite) TestDataForTableStatsField(c *C) {
 	h.Clear()
 	is := do.InfoSchema()
 	tk := testkit.NewTestKit(c, s.store)
+	tk.MustExec("set global tidb_partition_prune_mode='dynamic-only'")
+	c.Assert(h.RefreshVars(), IsNil)
 
 	tk.MustExec("use test")
 	tk.MustExec("drop table if exists t")
@@ -421,6 +423,7 @@ func (s *testInfoschemaTableSerialSuite) TestPartitionsTable(c *C) {
 
 	{
 		tk.MustExec("USE test;")
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		tk.MustExec("DROP TABLE IF EXISTS `test_partitions`;")
 		tk.MustExec(`CREATE TABLE test_partitions (a int, b int, c varchar(5), primary key(a), index idx(c)) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6), PARTITION p1 VALUES LESS THAN (11), PARTITION p2 VALUES LESS THAN (16));`)
 		err := h.HandleDDLEvent(<-h.DDLEventCh())
@@ -461,7 +464,7 @@ func (s *testInfoschemaTableSerialSuite) TestPartitionsTable(c *C) {
 	}
 
 	{
-		tk.MustExec("set @try_old_partition_implementation=1")
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		tk.MustExec("USE test;")
 		tk.MustExec("DROP TABLE IF EXISTS `test_partitions`;")
 		tk.MustExec(`CREATE TABLE test_partitions (a int, b int, c varchar(5), primary key(a), index idx(c)) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6), PARTITION p1 VALUES LESS THAN (11), PARTITION p2 VALUES LESS THAN (16));`)

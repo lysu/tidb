@@ -14,6 +14,7 @@
 package handle_test
 
 import (
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"math"
 	"time"
 
@@ -61,6 +62,7 @@ func (s *testStatsSuite) TestGCPartition(c *C) {
 	testKit.MustExec("set @@session.tidb_enable_table_partition=1")
 
 	{
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		testKit.MustExec(`create table t (a bigint(64), b bigint(64), index idx(a, b))
 			    partition by range (a) (
@@ -94,7 +96,7 @@ func (s *testStatsSuite) TestGCPartition(c *C) {
 	}
 
 	{
-		testKit.MustExec("set @try_old_partition_implementation=1")
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		testKit.MustExec(`create table t (a bigint(64), b bigint(64), index idx(a, b))
 			    partition by range (a) (

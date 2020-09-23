@@ -324,6 +324,7 @@ func (s *testStatsSuite) TestUpdatePartition(c *C) {
 	testKit.MustExec("use test")
 
 	{
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b char(5)) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6),PARTITION p1 VALUES LESS THAN (11))`
 		testKit.MustExec(createTable)
@@ -363,7 +364,7 @@ func (s *testStatsSuite) TestUpdatePartition(c *C) {
 	}
 
 	{
-		testKit.MustExec("set @try_old_partition_implementation=1")
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b char(5)) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6),PARTITION p1 VALUES LESS THAN (11))`
 		testKit.MustExec(createTable)
@@ -514,6 +515,7 @@ func (s *testStatsSuite) TestAutoUpdatePartition(c *C) {
 	testKit.MustExec("use test")
 
 	{
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		testKit.MustExec("create table t (a int) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6))")
 		testKit.MustExec("analyze table t")
@@ -546,7 +548,7 @@ func (s *testStatsSuite) TestAutoUpdatePartition(c *C) {
 	}
 
 	{
-		testKit.MustExec("set @try_old_partition_implementation=1")
+		testKit.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		testKit.MustExec("drop table if exists t")
 		testKit.MustExec("create table t (a int) PARTITION BY RANGE (a) (PARTITION p0 VALUES LESS THAN (6))")
 		testKit.MustExec("analyze table t")

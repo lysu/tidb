@@ -54,6 +54,7 @@ func (s *testSuite1) TestAnalyzePartition(c *C) {
 	tk.MustExec("use test")
 
 	{ // test with new stats
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
 		tk.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b int, c varchar(10), primary key(a), index idx(b))
 PARTITION BY RANGE ( a ) (
@@ -102,7 +103,7 @@ PARTITION BY RANGE ( a ) (
 	}
 
 	{ // test with old stats
-		tk.MustExec("set @try_old_partition_implementation=1")
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
 		tk.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b int, c varchar(10), primary key(a), index idx(b))
 PARTITION BY RANGE ( a ) (

@@ -15,6 +15,7 @@ package executor_test
 
 import (
 	"fmt"
+	"github.com/pingcap/tidb/sessionctx/variable"
 	"time"
 
 	. "github.com/pingcap/check"
@@ -86,6 +87,8 @@ func (s *testShowStatsSuite) TestShowStatsBuckets(c *C) {
 
 func (s *testShowStatsSuite) TestShowStatsHasNullValue(c *C) {
 	tk := testkit.NewTestKit(c, s.store)
+	tk.MustExec(`set global tidb_partition_prune_mode='dynamic-only'`)
+	c.Assert(s.domain.StatsHandle().RefreshVars(), IsNil)
 	tk.MustExec("use test")
 	tk.MustExec("drop table if exists t")
 	tk.MustExec("create table t (a int, index idx(a))")
@@ -150,6 +153,9 @@ func (s *testShowStatsSuite) TestShowPartitionStats(c *C) {
 
 	{
 		tk.MustExec("use test")
+		tk.MustExec(`set global tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.DynamicOnly) + `'`)
+		c.Assert(s.domain.StatsHandle().RefreshVars(), IsNil)
 		tk.MustExec("drop table if exists t")
 		createTable := `CREATE TABLE t (a int, b int, primary key(a), index idx(b))
 						PARTITION BY RANGE ( a ) (PARTITION p0 VALUES LESS THAN (6))`
@@ -180,7 +186,9 @@ func (s *testShowStatsSuite) TestShowPartitionStats(c *C) {
 	}
 
 	{
-		tk.MustExec("set @try_old_partition_implementation=1")
+		tk.MustExec(`set global tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
+		tk.MustExec(`set @@tidb_partition_prune_mode='` + string(variable.StaticOnly) + `'`)
+		c.Assert(s.domain.StatsHandle().RefreshVars(), IsNil)
 		tk.MustExec("set @@session.tidb_enable_table_partition=1")
 		tk.MustExec("use test")
 		tk.MustExec("drop table if exists t")
