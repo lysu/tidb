@@ -92,6 +92,7 @@ type lookupTableTask struct {
 	// Step 4   is  completed in "IndexLookUpExecutor.Next".
 	memUsage   int64
 	memTracker *memory.Tracker
+	partition  int64
 }
 
 func (task *lookupTableTask) Len() int {
@@ -347,11 +348,12 @@ func (e *IndexReaderExecutor) open(ctx context.Context, kvRanges []kv.KeyRange) 
 type IndexLookUpExecutor struct {
 	baseExecutor
 
-	table   table.Table
-	index   *model.IndexInfo
-	ranges  []*ranger.Range
-	dagPB   *tipb.DAGRequest
-	startTS uint64
+	table      table.Table
+	index      *model.IndexInfo
+	ranges     []*ranger.Range
+	partitions []int64
+	dagPB      *tipb.DAGRequest
+	startTS    uint64
 	// handleIdx is the index of handle, which is only used for case of keeping order.
 	handleIdx       []int
 	handleCols      []*expression.Column
@@ -418,11 +420,19 @@ func (e *IndexLookUpExecutor) Open(ctx context.Context) error {
 		}
 	}
 	sc := e.ctx.GetSessionVars().StmtCtx
-	physicalID := getPhysicalTableID(e.table)
-	if e.index.ID == -1 {
-		e.kvRanges, err = distsql.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, e.ranges)
+	if len(e.partitions) == 0 {
+		physicalID := getPhysicalTableID(e.table)
+		if e.index.ID == -1 {
+			e.kvRanges, err = distsql.CommonHandleRangesToKVRanges(sc, []int64{physicalID}, e.ranges)
+		} else {
+			e.kvRanges, err = distsql.IndexRangesToKVRanges(sc, physicalID, e.index.ID, e.ranges, e.feedback)
+		}
 	} else {
-		e.kvRanges, err = distsql.IndexRangesToKVRanges(sc, physicalID, e.index.ID, e.ranges, e.feedback)
+		if e.index.ID == -1 {
+			e.kvRanges, err = distsql.CommonHandleRangesToKVRanges(sc, e.partitions, e.ranges)
+		} else {
+			e.kvRanges, err = distsql.IndexRangesToKVRangesForTables(sc, e.partitions, e.index.ID, e.ranges, e.feedback)
+		}
 	}
 	if err != nil {
 		e.feedback.Invalidate()
@@ -503,11 +513,12 @@ func (e *IndexLookUpExecutor) startIndexWorker(ctx context.Context, kvRanges []k
 		collExec := true
 		e.dagPB.CollectExecutionSummaries = &collExec
 	}
-
+	handleMultiPartition := e.ctx.GetSessionVars().UseDynamicPartitionPrune() && e.table.Meta().GetPartitionInfo() != nil
 	tracker := memory.NewTracker(memory.LabelForIndexWorker, -1)
 	tracker.AttachTo(e.memTracker)
 	var builder distsql.RequestBuilder
 	kvReq, err := builder.SetKeyRanges(kvRanges).
+		SetAlignWithPartition(handleMultiPartition).
 		SetDAGRequest(e.dagPB).
 		SetStartTS(e.startTS).
 		SetDesc(e.desc).
@@ -588,7 +599,7 @@ func (e *IndexLookUpExecutor) startTableWorker(ctx context.Context, workCh <-cha
 	}
 }
 
-func (e *IndexLookUpExecutor) buildTableReader(ctx context.Context, handles []kv.Handle) (Executor, error) {
+func (e *IndexLookUpExecutor) buildTableReader(ctx context.Context, handles []kv.Handle, partition int64) (Executor, error) {
 	tableReaderExec := &TableReaderExecutor{
 		baseExecutor:   newBaseExecutor(e.ctx, e.schema, 0),
 		table:          e.table,
@@ -601,7 +612,7 @@ func (e *IndexLookUpExecutor) buildTableReader(ctx context.Context, handles []kv
 		plans:          e.tblPlans,
 	}
 	tableReaderExec.buildVirtualColumnInfo()
-	tableReader, err := e.dataReaderBuilder.buildTableReaderFromHandles(ctx, tableReaderExec, handles, true)
+	tableReader, err := e.dataReaderBuilder.buildTableReaderFromHandles(ctx, tableReaderExec, handles, true, partition)
 	if err != nil {
 		logutil.Logger(ctx).Error("build table reader from handles failed", zap.Error(err))
 		return nil, err
@@ -732,6 +743,7 @@ func (w *indexWorker) fetchHandles(ctx context.Context, result distsql.SelectRes
 			return count, nil
 		}
 		task := w.buildTableTask(handles, retChunk)
+		task.partition = result.PartitionID()
 		select {
 		case <-ctx.Done():
 			return count, nil
@@ -850,7 +862,7 @@ type tableWorker struct {
 	idxLookup      *IndexLookUpExecutor
 	workCh         <-chan *lookupTableTask
 	finished       <-chan struct{}
-	buildTblReader func(ctx context.Context, handles []kv.Handle) (Executor, error)
+	buildTblReader func(ctx context.Context, handles []kv.Handle, partition int64) (Executor, error)
 	keepOrder      bool
 	handleIdx      []int
 
@@ -995,7 +1007,7 @@ func (w *tableWorker) compareData(ctx context.Context, task *lookupTableTask, ta
 // executeTask executes the table look up tasks. We will construct a table reader and send request by handles.
 // Then we hold the returning rows and finish this task.
 func (w *tableWorker) executeTask(ctx context.Context, task *lookupTableTask) error {
-	tableReader, err := w.buildTblReader(ctx, task.handles)
+	tableReader, err := w.buildTblReader(ctx, task.handles, task.partition)
 	if err != nil {
 		logutil.Logger(ctx).Error("build table reader failed", zap.Error(err))
 		return err

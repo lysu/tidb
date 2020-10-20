@@ -443,6 +443,8 @@ type mockResultSubset struct{ data []byte }
 // GetData implements kv.ResultSubset interface.
 func (r *mockResultSubset) GetData() []byte { return r.data }
 
+func (r *mockResultSubset) GetPartition() int64 { return -1 }
+
 // GetStartKey implements kv.ResultSubset interface.
 func (r *mockResultSubset) GetStartKey() kv.Key { return nil }
 

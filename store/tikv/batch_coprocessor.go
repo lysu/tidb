@@ -55,6 +55,10 @@ func (rs *batchCopResponse) GetData() []byte {
 	return rs.pbResp.Data
 }
 
+func (rs *batchCopResponse) GetPartition() int64 {
+	return -1
+}
+
 // GetStartKey implements the kv.ResultSubset GetStartKey interface.
 func (rs *batchCopResponse) GetStartKey() kv.Key {
 	return rs.startKey

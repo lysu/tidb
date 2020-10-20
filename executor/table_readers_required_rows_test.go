@@ -45,6 +45,7 @@ type requiredRowsSelectResult struct {
 func (r *requiredRowsSelectResult) Fetch(context.Context)                   {}
 func (r *requiredRowsSelectResult) NextRaw(context.Context) ([]byte, error) { return nil, nil }
 func (r *requiredRowsSelectResult) Close() error                            { return nil }
+func (r *requiredRowsSelectResult) PartitionID() int64                      { return -1 }
 
 func (r *requiredRowsSelectResult) Next(ctx context.Context, chk *chunk.Chunk) error {
 	defer func() {

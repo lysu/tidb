@@ -63,6 +63,8 @@ type SelectResult interface {
 	Next(context.Context, *chunk.Chunk) error
 	// Close closes the iterator.
 	Close() error
+
+	PartitionID() int64
 }
 
 type selectResult struct {
@@ -92,10 +94,15 @@ type selectResult struct {
 	durationReported bool
 	memTracker       *memory.Tracker
 
-	stats *selectResultRuntimeStats
+	stats        *selectResultRuntimeStats
+	optPartition int64
 }
 
 func (r *selectResult) Fetch(ctx context.Context) {
+}
+
+func (r *selectResult) PartitionID() int64 {
+	return r.optPartition
 }
 
 func (r *selectResult) fetchResp(ctx context.Context) error {
@@ -128,6 +135,7 @@ func (r *selectResult) fetchResp(ctx context.Context) error {
 		if err != nil {
 			return errors.Trace(err)
 		}
+		r.optPartition = resultSubset.GetPartition()
 		respSize := int64(r.selectResp.Size())
 		atomic.StoreInt64(&r.selectRespSize, respSize)
 		r.memConsume(respSize)

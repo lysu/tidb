@@ -42,6 +42,11 @@ func (builder *RequestBuilder) Build() (*kv.Request, error) {
 	return &builder.Request, builder.err
 }
 
+func (builder *RequestBuilder) SetAlignWithPartition(enable bool) *RequestBuilder {
+	builder.Request.AlignWithPartition = enable
+	return builder
+}
+
 // SetMemTracker sets a memTracker for this request.
 func (builder *RequestBuilder) SetMemTracker(tracker *memory.Tracker) *RequestBuilder {
 	builder.Request.MemTracker = tracker

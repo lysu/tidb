@@ -2940,13 +2940,19 @@ func (b *executorBuilder) buildIndexLookUpReader(v *plannercore.PhysicalIndexLoo
 		return ret
 	}
 
-	nextPartition := nextPartitionForIndexLookUp{exec: ret}
-	exec, err := buildPartitionTable(b, ts.Table, &v.PartitionInfo, ret, nextPartition)
+	partitions, err := partitionPruning(b.ctx, ret.table.(table.PartitionedTable), v.PartitionInfo.PruningConds,
+		v.PartitionInfo.PartitionNames, v.PartitionInfo.Columns, v.PartitionInfo.ColumnNames)
 	if err != nil {
 		b.err = err
 		return nil
 	}
-	return exec
+
+	var partIDs []int64
+	for _, partition := range partitions {
+		partIDs = append(partIDs, partition.GetPhysicalID())
+	}
+	ret.partitions = partIDs
+	return ret
 }
 
 func buildNoRangeIndexMergeReader(b *executorBuilder, v *plannercore.PhysicalIndexMergeReader) (*IndexMergeReaderExecutor, error) {
@@ -3201,10 +3207,10 @@ func (builder *dataReaderBuilder) buildTableReaderForIndexJoin(ctx context.Conte
 
 	handles, lookUpContents := dedupHandles(lookUpContents)
 	if tbInfo.GetPartitionInfo() == nil {
-		return builder.buildTableReaderFromHandles(ctx, e, handles, canReorderHandles)
+		return builder.buildTableReaderFromHandles(ctx, e, handles, canReorderHandles, -1)
 	}
 	if !builder.ctx.GetSessionVars().UseDynamicPartitionPrune() {
-		return builder.buildTableReaderFromHandles(ctx, e, handles, canReorderHandles)
+		return builder.buildTableReaderFromHandles(ctx, e, handles, canReorderHandles, -1)
 	}
 
 	tbl, _ := builder.is.TableByID(tbInfo.ID)
@@ -3325,17 +3331,21 @@ func (builder *dataReaderBuilder) buildTableReaderBase(ctx context.Context, e *T
 	return e, nil
 }
 
-func (builder *dataReaderBuilder) buildTableReaderFromHandles(ctx context.Context, e *TableReaderExecutor, handles []kv.Handle, canReorderHandles bool) (*TableReaderExecutor, error) {
+func (builder *dataReaderBuilder) buildTableReaderFromHandles(ctx context.Context, e *TableReaderExecutor, handles []kv.Handle, canReorderHandles bool, partition int64) (*TableReaderExecutor, error) {
 	if canReorderHandles {
 		sort.Slice(handles, func(i, j int) bool {
 			return handles[i].Compare(handles[j]) < 0
 		})
 	}
 	var b distsql.RequestBuilder
-	if _, ok := handles[0].(kv.PartitionHandle); ok {
-		b.SetPartitionsAndHandles(handles)
+	if partition < 0 {
+		if _, ok := handles[0].(kv.PartitionHandle); ok {
+			b.SetPartitionsAndHandles(handles)
+		} else {
+			b.SetTableHandles(getPhysicalTableID(e.table), handles)
+		}
 	} else {
-		b.SetTableHandles(getPhysicalTableID(e.table), handles)
+		b.SetTableHandles(partition, handles)
 	}
 	return builder.buildTableReaderBase(ctx, e, b)
 }

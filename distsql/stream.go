@@ -172,3 +172,7 @@ func (r *streamResult) Close() error {
 	metrics.DistSQLPartialCountHistogram.Observe(float64(r.partialCount))
 	return nil
 }
+
+func (r *streamResult) PartitionID() int64 {
+	return -1
+}

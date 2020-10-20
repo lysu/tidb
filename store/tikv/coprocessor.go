@@ -38,6 +38,7 @@ import (
 	"github.com/pingcap/tidb/kv"
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/store/tikv/tikvrpc"
+	"github.com/pingcap/tidb/tablecodec"
 	"github.com/pingcap/tidb/util/execdetails"
 	"github.com/pingcap/tidb/util/logutil"
 	"github.com/pingcap/tidb/util/memory"
@@ -116,10 +117,11 @@ type copTask struct {
 	region RegionVerID
 	ranges *copRanges
 
-	respChan  chan *copResponse
-	storeAddr string
-	cmdType   tikvrpc.CmdType
-	storeType kv.StoreType
+	respChan     chan *copResponse
+	storeAddr    string
+	cmdType      tikvrpc.CmdType
+	storeType    kv.StoreType
+	optPartition int64
 }
 
 func (r *copTask) String() string {
@@ -257,18 +259,35 @@ func buildCopTasks(bo *Backoffer, cache *RegionCache, ranges *copRanges, req *kv
 		// TiKV will return gRPC error if the message is too large. So we need to limit the length of the ranges slice
 		// to make sure the message can be sent successfully.
 		rLen := ranges.len()
+		if rLen == 0 {
+			return
+		}
+		curPart := int64(-1)
 		for i := 0; i < rLen; {
 			nextI := mathutil.Min(i+rangesPerTask, rLen)
+			if req.AlignWithPartition {
+				for j := i; j < nextI; j++ {
+					part := tablecodec.DecodeTableID(ranges.at(j).StartKey)
+					if curPart < 0 {
+						curPart = part
+					} else if part != curPart {
+						nextI = j
+						break
+					}
+				}
+			}
 			tasks = append(tasks, &copTask{
 				region: regionWithRangeInfo.Region,
 				ranges: ranges.slice(i, nextI),
 				// Channel buffer is 2 for handling region split.
 				// In a common case, two region split tasks will not be blocked.
-				respChan:  make(chan *copResponse, 2),
-				cmdType:   cmdType,
-				storeType: req.StoreType,
+				respChan:     make(chan *copResponse, 2),
+				cmdType:      cmdType,
+				storeType:    req.StoreType,
+				optPartition: curPart,
 			})
 			i = nextI
+			curPart = -1
 		}
 	}
 
@@ -457,12 +476,13 @@ type copIteratorTaskSender struct {
 }
 
 type copResponse struct {
-	pbResp   *coprocessor.Response
-	detail   *CopRuntimeStats
-	startKey kv.Key
-	err      error
-	respSize int64
-	respTime time.Duration
+	pbResp       *coprocessor.Response
+	detail       *CopRuntimeStats
+	startKey     kv.Key
+	err          error
+	respSize     int64
+	respTime     time.Duration
+	optPartition int64
 }
 
 const (
@@ -473,6 +493,10 @@ const (
 // GetData implements the kv.ResultSubset GetData interface.
 func (rs *copResponse) GetData() []byte {
 	return rs.pbResp.Data
+}
+
+func (rs *copResponse) GetPartition() int64 {
+	return rs.optPartition
 }
 
 // GetStartKey implements the kv.ResultSubset GetStartKey interface.
@@ -861,7 +885,7 @@ func (worker *copIteratorWorker) handleTaskOnce(bo *Backoffer, task *copTask, ch
 	}
 
 	// Handles the response for non-streaming copTask.
-	return worker.handleCopResponse(bo, rpcCtx, &copResponse{pbResp: resp.Resp.(*coprocessor.Response)}, cacheKey, cacheValue, task, ch, nil, costTime)
+	return worker.handleCopResponse(bo, rpcCtx, &copResponse{pbResp: resp.Resp.(*coprocessor.Response), optPartition: task.optPartition}, cacheKey, cacheValue, task, ch, nil, costTime)
 }
 
 type minCommitTSPushed struct {
