@@ -201,10 +201,17 @@ func dumpBinaryDateTime(data []byte, t types.Time) []byte {
 		if t.IsZero() {
 			data = append(data, 0)
 		} else {
-			data = append(data, 11)
+			hasFrac := t.Microsecond() > 0
+			if hasFrac {
+				data = append(data, 11)
+			} else {
+				data = append(data, 7)
+			}
 			data = dumpUint16(data, uint16(year))
 			data = append(data, byte(mon), byte(day), byte(t.Hour()), byte(t.Minute()), byte(t.Second()))
-			data = dumpUint32(data, uint32(t.Microsecond()))
+			if hasFrac {
+				data = dumpUint32(data, uint32(t.Microsecond()))
+			}
 		}
 	case mysql.TypeDate:
 		if t.IsZero() {
