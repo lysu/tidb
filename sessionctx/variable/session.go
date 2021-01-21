@@ -2127,6 +2127,8 @@ const (
 	SlowLogBackoffTotal = "Backoff_total"
 	// SlowLogWriteSQLRespTotal is the total time used to write response to client.
 	SlowLogWriteSQLRespTotal = "Write_sql_response_total"
+	// SlowLogWaitAutoIDTotal is the total time wait alloc id from meta.
+	SlowLogWaitAutoIDTotal = "Wait_auto_id_total"
 	// SlowLogExecRetryCount is the execution retry count.
 	SlowLogExecRetryCount = "Exec_retry_count"
 	// SlowLogExecRetryTime is the execution retry time.
@@ -2165,6 +2167,7 @@ type SlowQueryLogItems struct {
 	PDTotal           time.Duration
 	BackoffTotal      time.Duration
 	WriteSQLRespTotal time.Duration
+	WaitAutoIDTotal   time.Duration
 	ExecRetryCount    uint
 	ExecRetryTime     time.Duration
 }
@@ -2329,6 +2332,7 @@ func (s *SessionVars) SlowLogFormat(logItems *SlowQueryLogItems) string {
 	writeSlowLogItem(&buf, SlowLogPDTotal, strconv.FormatFloat(logItems.PDTotal.Seconds(), 'f', -1, 64))
 	writeSlowLogItem(&buf, SlowLogBackoffTotal, strconv.FormatFloat(logItems.BackoffTotal.Seconds(), 'f', -1, 64))
 	writeSlowLogItem(&buf, SlowLogWriteSQLRespTotal, strconv.FormatFloat(logItems.WriteSQLRespTotal.Seconds(), 'f', -1, 64))
+	writeSlowLogItem(&buf, SlowLogWaitAutoIDTotal, strconv.FormatFloat(logItems.WaitAutoIDTotal.Seconds(), 'f', -1, 64))
 	writeSlowLogItem(&buf, SlowLogSucc, strconv.FormatBool(logItems.Succ))
 	if len(logItems.Plan) != 0 {
 		writeSlowLogItem(&buf, SlowLogPlan, logItems.Plan)

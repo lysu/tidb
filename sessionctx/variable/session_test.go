@@ -211,6 +211,7 @@ func (*testSessionSuite) TestSlowLogFormat(c *C) {
 # PD_total: 11
 # Backoff_total: 12
 # Write_sql_response_total: 1
+# Wait_auto_id_total: 2
 # Succ: true`
 	sql := "select * from t;"
 	_, digest := parser.NormalizeDigest(sql)
@@ -237,6 +238,7 @@ func (*testSessionSuite) TestSlowLogFormat(c *C) {
 		PDTotal:           11 * time.Second,
 		BackoffTotal:      12 * time.Second,
 		WriteSQLRespTotal: 1 * time.Second,
+		WaitAutoIDTotal:   2 * time.Second,
 		Succ:              true,
 		RewriteInfo: variable.RewritePhaseInfo{
 			DurationRewrite:            3,

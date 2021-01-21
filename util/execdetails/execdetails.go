@@ -68,6 +68,7 @@ type StmtExecDetails struct {
 	WaitKVRespDuration   int64
 	WaitPDRespDuration   int64
 	WriteSQLRespDuration time.Duration
+	WaitAutoIDDuration   int64
 }
 
 // CommitDetails contains commit detail information.

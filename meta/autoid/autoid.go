@@ -17,6 +17,7 @@ import (
 	"context"
 	"math"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cznic/mathutil"
@@ -29,6 +30,7 @@ import (
 	"github.com/pingcap/tidb/meta"
 	"github.com/pingcap/tidb/metrics"
 	"github.com/pingcap/tidb/types"
+	"github.com/pingcap/tidb/util/execdetails"
 	"github.com/pingcap/tidb/util/logutil"
 	"go.uber.org/zap"
 )
@@ -471,8 +473,16 @@ func (alloc *allocator) Alloc(ctx context.Context, tableID int64, n uint64, incr
 			return 0, 0, errInvalidIncrementAndOffset.GenWithStackByArgs(increment, offset)
 		}
 	}
+	start := time.Now()
 	alloc.mu.Lock()
-	defer alloc.mu.Unlock()
+	defer func() {
+		alloc.mu.Unlock()
+		stmtExec := ctx.Value(execdetails.StmtExecDetailKey)
+		if stmtExec != nil {
+			detail := stmtExec.(*execdetails.StmtExecDetails)
+			atomic.AddInt64(&detail.WaitAutoIDDuration, int64(time.Since(start)))
+		}
+	}()
 	if alloc.isUnsigned {
 		return alloc.alloc4Unsigned(ctx, tableID, n, increment, offset)
 	}
