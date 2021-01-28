@@ -2262,6 +2262,17 @@ func (s *testSuite4) TestLoadData(c *C) {
 		{[]byte("1##2##\"3##\"##\"4\n\"#2##3##\"##4#\"##5#"), nil, []string{"1|2|3##|4", "2|3|##4#|5"}, nil, "Records: 2  Deleted: 0  Skipped: 0  Warnings: 0"},
 	}
 	checkCases(tests, ld, c, tk, ctx, selectSQL, deleteSQL)
+
+	ld.LinesInfo.Terminated = "#"
+	ld.FieldsInfo.Terminated = "#"
+	tests = []testCase{
+		{[]byte("1#2#3"), nil, []string{"1|2|3|<nil>"}, nil, "Records: 1  Deleted: 0  Skipped: 0  Warnings: 0"},
+		{[]byte("1#2#"), nil, []string{"1|2||<nil>"}, nil, "Records: 1  Deleted: 0  Skipped: 0  Warnings: 0"},
+		{[]byte("1#"), nil, []string{"1|0|<nil>|<nil>"}, nil, "Records: 1  Deleted: 0  Skipped: 0  Warnings: 1"},
+		{[]byte("1#2#3#4#2#3#4#5"), nil, []string{"1|2|3|4", "2|3|4|5"}, nil, "Records: 2  Deleted: 0  Skipped: 0  Warnings: 0"},
+		{[]byte("1#2#3#4#2"), nil, []string{"1|2|3|4", "2|<nil>|<nil>|<nil>"}, nil, "Records: 2  Deleted: 0  Skipped: 0  Warnings: 0"},
+	}
+	checkCases(tests, ld, c, tk, ctx, selectSQL, deleteSQL)
 }
 
 func (s *testSuite4) TestLoadDataEscape(c *C) {

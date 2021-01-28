@@ -559,6 +559,7 @@ func (e *LoadDataInfo) InsertData(ctx context.Context, prevData, curData []byte)
 	if len(prevData) == 0 && len(curData) == 0 {
 		return nil, false, nil
 	}
+	flattenMode := e.FieldsInfo.Terminated == e.LinesInfo.Terminated
 	var line []byte
 	var isEOF, hasStarting, reachLimit bool
 	if len(prevData) > 0 && len(curData) == 0 {
@@ -595,9 +596,10 @@ func (e *LoadDataInfo) InsertData(ctx context.Context, prevData, curData []byte)
 		}
 		// rowCount will be used in fillRow(), last insert ID will be assigned according to the rowCount = 1.
 		// So should add first here.
-		e.rowCount++
-		e.rows = append(e.rows, e.colsToRow(ctx, cols))
-		e.curBatchCnt++
+		rows := e.colsToRow(ctx, cols, flattenMode)
+		e.rowCount += uint64(len(rows))
+		e.rows = append(e.rows, rows...)
+		e.curBatchCnt += uint64(len(rows))
 		if e.maxRowsInBatch != 0 && e.rowCount%e.maxRowsInBatch == 0 {
 			reachLimit = true
 			logutil.Logger(ctx).Info("batch limit hit when inserting rows", zap.Int("maxBatchRows", e.maxChunkSize),
@@ -642,60 +644,72 @@ func (e *LoadDataInfo) SetMessage() {
 	e.ctx.GetSessionVars().StmtCtx.SetMessage(msg)
 }
 
-func (e *LoadDataInfo) colsToRow(ctx context.Context, cols []field) []types.Datum {
+func (e *LoadDataInfo) colsToRow(ctx context.Context, cols []field, flattenMode bool) (rows [][]types.Datum) {
 	row := make([]types.Datum, 0, len(e.insertColumns))
+	for len(cols) > 0 {
+		row = row[:0]
+		var remainIdx int
+		for i := 0; i < len(e.FieldMappings); i++ {
+			if i >= len(cols) {
+				if e.FieldMappings[i].Column == nil {
+					sessionVars := e.Ctx.GetSessionVars()
+					sessionVars.SetUserVar(e.FieldMappings[i].UserVar.Name, "", mysql.DefaultCollationName)
+					continue
+				}
 
-	for i := 0; i < len(e.FieldMappings); i++ {
-		if i >= len(cols) {
+				// If some columns is missing and their type is time and has not null flag, they should be set as current time.
+				if types.IsTypeTime(e.FieldMappings[i].Column.Tp) && mysql.HasNotNullFlag(e.FieldMappings[i].Column.Flag) {
+					row = append(row, types.NewTimeDatum(types.CurrentTime(e.FieldMappings[i].Column.Tp)))
+					continue
+				}
+
+				row = append(row, types.NewDatum(nil))
+				continue
+			}
+
+			remainIdx = i + 1
 			if e.FieldMappings[i].Column == nil {
 				sessionVars := e.Ctx.GetSessionVars()
-				sessionVars.SetUserVar(e.FieldMappings[i].UserVar.Name, "", mysql.DefaultCollationName)
+				sessionVars.SetUserVar(e.FieldMappings[i].UserVar.Name, string(cols[i].str), mysql.DefaultCollationName)
 				continue
 			}
 
-			// If some columns is missing and their type is time and has not null flag, they should be set as current time.
-			if types.IsTypeTime(e.FieldMappings[i].Column.Tp) && mysql.HasNotNullFlag(e.FieldMappings[i].Column.Flag) {
-				row = append(row, types.NewTimeDatum(types.CurrentTime(e.FieldMappings[i].Column.Tp)))
+			// The field with only "\N" in it is handled as NULL in the csv file.
+			// See http://dev.mysql.com/doc/refman/5.7/en/load-data.html
+			if cols[i].maybeNull && string(cols[i].str) == "N" {
+				row = append(row, types.NewDatum(nil))
 				continue
 			}
 
-			row = append(row, types.NewDatum(nil))
-			continue
+			row = append(row, types.NewDatum(string(cols[i].str)))
+		}
+		if remainIdx >= len(cols) {
+			cols = nil
+		} else {
+			cols = cols[remainIdx:]
+		}
+		for i := 0; i < len(e.ColumnAssignments); i++ {
+			// eval expression of `SET` clause
+			d, err := expression.EvalAstExpr(e.Ctx, e.ColumnAssignments[i].Expr)
+			if err != nil {
+				e.handleWarning(err)
+				return nil
+			}
+			row = append(row, d)
 		}
 
-		if e.FieldMappings[i].Column == nil {
-			sessionVars := e.Ctx.GetSessionVars()
-			sessionVars.SetUserVar(e.FieldMappings[i].UserVar.Name, string(cols[i].str), mysql.DefaultCollationName)
-			continue
-		}
-
-		// The field with only "\N" in it is handled as NULL in the csv file.
-		// See http://dev.mysql.com/doc/refman/5.7/en/load-data.html
-		if cols[i].maybeNull && string(cols[i].str) == "N" {
-			row = append(row, types.NewDatum(nil))
-			continue
-		}
-
-		row = append(row, types.NewDatum(string(cols[i].str)))
-	}
-	for i := 0; i < len(e.ColumnAssignments); i++ {
-		// eval expression of `SET` clause
-		d, err := expression.EvalAstExpr(e.Ctx, e.ColumnAssignments[i].Expr)
+		// a new row buffer will be allocated in getRow
+		newRow, err := e.getRow(ctx, row)
 		if err != nil {
 			e.handleWarning(err)
-			return nil
+			continue
 		}
-		row = append(row, d)
+		rows = append(rows, newRow)
+		if !flattenMode {
+			break
+		}
 	}
-
-	// a new row buffer will be allocated in getRow
-	newRow, err := e.getRow(ctx, row)
-	if err != nil {
-		e.handleWarning(err)
-		return nil
-	}
-
-	return newRow
+	return
 }
 
 func (e *LoadDataInfo) addRecordLD(ctx context.Context, row []types.Datum) error {
