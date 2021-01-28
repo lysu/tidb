@@ -646,6 +646,7 @@ func (e *LoadDataInfo) SetMessage() {
 
 func (e *LoadDataInfo) colsToRow(ctx context.Context, cols []field, flattenMode bool) (rows [][]types.Datum) {
 	row := make([]types.Datum, 0, len(e.insertColumns))
+handleRemain:
 	for len(cols) > 0 {
 		row = row[:0]
 		var remainIdx int
@@ -693,7 +694,11 @@ func (e *LoadDataInfo) colsToRow(ctx context.Context, cols []field, flattenMode 
 			d, err := expression.EvalAstExpr(e.Ctx, e.ColumnAssignments[i].Expr)
 			if err != nil {
 				e.handleWarning(err)
-				return nil
+				rows = append(rows, nil)
+				if !flattenMode {
+					return
+				}
+				continue handleRemain
 			}
 			row = append(row, d)
 		}
@@ -702,11 +707,11 @@ func (e *LoadDataInfo) colsToRow(ctx context.Context, cols []field, flattenMode 
 		newRow, err := e.getRow(ctx, row)
 		if err != nil {
 			e.handleWarning(err)
-			continue
+			newRow = nil
 		}
 		rows = append(rows, newRow)
 		if !flattenMode {
-			break
+			return
 		}
 	}
 	return
