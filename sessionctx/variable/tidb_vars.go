@@ -528,6 +528,9 @@ const (
 
 	// TiDBEnableTiFlashFallbackTiKV indicates whether to fallback to TiKV when TiFlash is unavailable.
 	TiDBEnableTiFlashFallbackTiKV = "tidb_enable_tiflash_fallback_tikv"
+
+	// TiDBIntPrimaryKeyDefaultAsClustered indicates whether create int primary key as clustered as 4.0 behavior.
+	TiDBIntPrimaryKeyDefaultAsClustered = "tidb_int_primary_key_default_as_clustered"
 )
 
 // TiDB vars that have only global scope
@@ -706,6 +709,7 @@ var FeatureSwitchVariables = []string{
 	TiDBEnable1PC,
 	TiDBGuaranteeLinearizability,
 	TiDBEnableClusteredIndex,
+	TiDBIntPrimaryKeyDefaultAsClustered,
 }
 
 // FilterImplicitFeatureSwitch is used to filter result of show variables, these switches should be turn blind to users.
