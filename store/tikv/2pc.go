@@ -327,6 +327,8 @@ type KVFilter interface {
 	IsUnnecessaryKeyValue(key, value []byte, flags kv.KeyFlags) bool
 }
 
+var PrettyKeyPrint func([]byte) string
+
 func (c *twoPhaseCommitter) initKeysAndMutations() error {
 	var size, putCnt, delCnt, lockCnt, checkCnt int
 
@@ -393,6 +395,7 @@ func (c *twoPhaseCommitter) initKeysAndMutations() error {
 		}
 		c.mutations.Push(op, isPessimistic, it.Handle())
 		size += len(key) + len(value)
+		logutil.BgLogger().Error("----->", zap.Stringer("op", op), zap.String("key", PrettyKeyPrint(key)), zap.ByteString("value", value))
 
 		if len(c.primaryKey) == 0 && op != pb.Op_CheckNotExists {
 			c.primaryKey = key

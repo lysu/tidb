@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/pingcap/tidb/store/tikv"
 	"strings"
 	"time"
 
@@ -161,6 +162,14 @@ func newWriteConflictError(conflict *kvrpcpb.WriteConflict) error {
 	buf.WriteString(" primary=")
 	prettyWriteKey(&buf, conflict.Primary)
 	return kv.ErrWriteConflict.FastGenByArgs(conflict.StartTs, conflict.ConflictTs, conflict.ConflictCommitTs, buf.String())
+}
+
+func init() {
+	tikv.PrettyKeyPrint = func(k []byte) string {
+		var b bytes.Buffer
+		prettyWriteKey(&b, k)
+		return b.String()
+	}
 }
 
 func prettyWriteKey(buf *bytes.Buffer, key []byte) {
